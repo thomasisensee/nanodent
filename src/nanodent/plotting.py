@@ -176,10 +176,6 @@ def plot_group_timeline(
             facecolors=color,
             alpha=0.25,
         )
-        timestamps = [
-            mdates.date2num(experiment.timestamp)
-            for experiment in group.experiments
-        ]
 
     ax.xaxis_date()
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d\n%H:%M"))
@@ -220,10 +216,9 @@ def _plot_groups_overlay(
     else:
         figure = ax.figure
 
-    color_map = plt.get_cmap(cmap, max(_total_experiments(groups), 1))
-    color_index = 0
     for group in groups:
-        for experiment in group.experiments:
+        color_map = plt.get_cmap(cmap, max(len(group.experiments), 1))
+        for color_index, experiment in enumerate(group.experiments):
             curve = _prepare_curve(
                 experiment,
                 section=section,
@@ -241,7 +236,6 @@ def _plot_groups_overlay(
                 label=experiment.stem,
                 **line_kwargs,
             )
-            color_index += 1
 
     ax.set_xlabel(x)
     ax.set_ylabel(f"d/d{x} {y}" if derivative else y)
@@ -297,13 +291,12 @@ def _plot_groups_grid(
         main_ax.set_ylabel(f"d/d{x} {y}" if derivative else y)
         return figure, axes
 
-    color_map = plt.get_cmap(cmap, max(_total_experiments(groups), 1))
-    color_index = 0
     for row_index, group in enumerate(groups):
         main_ax = axes[row_index * (2 if show_slope else 1), 0]
         slope_ax = axes[row_index * 2 + 1, 0] if show_slope else None
+        color_map = plt.get_cmap(cmap, max(len(group.experiments), 1))
 
-        for experiment in group.experiments:
+        for color_index, experiment in enumerate(group.experiments):
             curve = _prepare_curve(
                 experiment,
                 section=section,
@@ -330,7 +323,6 @@ def _plot_groups_grid(
                     label=experiment.stem,
                     **line_kwargs,
                 )
-            color_index += 1
 
         _decorate_group_axes(
             main_ax,
@@ -511,16 +503,3 @@ def _coerce_timeline_groups(
     if isinstance(groups, Study):
         return groups.group_by_time_gap(max_gap=max_gap)
     return list(groups)
-
-
-def _total_experiments(groups: Sequence[ExperimentGroup]) -> int:
-    """Return the total number of experiments across groups.
-
-    Args:
-        groups: Experiment groups to inspect.
-
-    Returns:
-        Total experiment count.
-    """
-
-    return sum(len(group.experiments) for group in groups)

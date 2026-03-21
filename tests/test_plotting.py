@@ -30,6 +30,16 @@ def test_plot_groups_defaults_to_one_panel_per_group() -> None:
     assert axes[0, 0].get_ylabel() == "force_uN"
 
 
+def test_plot_groups_restarts_colormap_for_each_group() -> None:
+    study = load_folder(DATA_DIR)
+    groups = study.group_by_time_gap()
+
+    _, axes = plot_groups(groups, cmap="plasma")
+
+    assert axes[0, 0].lines[0].get_color() == axes[1, 0].lines[0].get_color()
+    assert axes[0, 0].lines[1].get_color() == axes[1, 0].lines[1].get_color()
+
+
 def test_plot_groups_overlay_preserves_combined_axes_behavior() -> None:
     study = load_folder(DATA_DIR)
     groups = study.group_by_time_gap()
@@ -39,6 +49,16 @@ def test_plot_groups_overlay_preserves_combined_axes_behavior() -> None:
     assert figure is axes.figure
     assert len(axes.lines) == 4
     assert axes.get_ylabel() == "force_uN"
+
+
+def test_plot_groups_overlay_restarts_colormap_for_each_group() -> None:
+    study = load_folder(DATA_DIR)
+    groups = study.group_by_time_gap()
+
+    _, axes = plot_groups(groups, layout="overlay", cmap="plasma")
+
+    assert axes.lines[0].get_color() == axes.lines[2].get_color()
+    assert axes.lines[1].get_color() == axes.lines[3].get_color()
 
 
 def test_plot_groups_can_show_separate_slope_panels() -> None:
