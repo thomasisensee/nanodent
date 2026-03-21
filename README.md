@@ -62,9 +62,12 @@ fig, axes = plot_groups(
 ```
 
 `Study.classify_delayed_onset()` keeps all experiments loaded but marks
-heuristically bad runs as `enabled=False` with a short `disabled_reason`.
-Grouping, plotting, and study summaries ignore disabled experiments by default;
-pass `include_disabled=True` when you want to review them explicitly.
+heuristically bad runs as `enabled=False` with a short `disabled_reason`,
+currently including `gradual_onset` and `flat_force`.
+Grouping and plotting ignore disabled experiments by default; group summaries
+include them by default so quality decisions stay visible. Pass
+`include_disabled=True` when you want disabled runs included in plots or
+grouping output.
 
 The public API also exposes:
 

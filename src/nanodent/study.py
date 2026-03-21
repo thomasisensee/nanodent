@@ -4,9 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Iterator, Sequence
 
-from nanodent.analysis.quality import (
-    classify_delayed_onset as _classify_delayed_onset,
-)
+from nanodent.analysis.quality import classify_quality as _classify_quality
 from nanodent.models import Experiment
 
 
@@ -207,23 +205,34 @@ class Study:
     def classify_delayed_onset(
         self,
         *,
+        min_robust_force_span_uN: float = 200.0,
+        low_quantile: float = 0.05,
+        high_quantile: float = 0.95,
         bin_count: int = 24,
         baseline_bin_count: int = 4,
-        onset_force_fraction: float = 0.1,
+        onset_force_fraction: float = 0.05,
+        target_force_fraction: float = 0.5,
         sustained_bins: int = 2,
-        max_onset_fraction: float = 0.7,
+        max_rise_width_fraction: float = 0.2,
     ) -> "Study":
-        """Return a study with experiments flagged by delayed-onset heuristic.
+        """Return a study with experiments flagged by quality heuristics.
 
         Args:
-            bin_count: Number of coarse displacement bins for onset detection.
+            min_robust_force_span_uN: Minimum acceptable robust force span for
+                the flat-force check.
+            low_quantile: Lower quantile used for the flat-force span.
+            high_quantile: Upper quantile used for the flat-force span.
+            bin_count: Number of coarse displacement bins for onset-shape
+                detection.
             baseline_bin_count: Number of early bins used for baseline force.
-            onset_force_fraction: Fraction of dynamic range that defines the
-                onset threshold.
+            onset_force_fraction: Lower force fraction used to define onset.
+            target_force_fraction: Upper force fraction used to define where
+                the onset rise is considered complete.
             sustained_bins: Number of consecutive bins that must exceed the
-                onset threshold.
-            max_onset_fraction: Maximum allowed onset position relative to the
-                displacement span before disabling the experiment.
+                lower onset threshold.
+            max_rise_width_fraction: Maximum allowed displacement width
+                between the lower and upper onset thresholds before disabling
+                the experiment.
 
         Returns:
             New study with updated `enabled` and `disabled_reason` values.
@@ -232,14 +241,18 @@ class Study:
         classified: list[Experiment] = []
         for experiment in self.experiments:
             test_section = experiment.section("test")
-            result = _classify_delayed_onset(
+            result = _classify_quality(
                 test_section["disp_nm"],
                 test_section["force_uN"],
+                min_robust_force_span_uN=min_robust_force_span_uN,
+                low_quantile=low_quantile,
+                high_quantile=high_quantile,
                 bin_count=bin_count,
                 baseline_bin_count=baseline_bin_count,
                 onset_force_fraction=onset_force_fraction,
+                target_force_fraction=target_force_fraction,
                 sustained_bins=sustained_bins,
-                max_onset_fraction=max_onset_fraction,
+                max_rise_width_fraction=max_rise_width_fraction,
             )
             classified.append(
                 experiment.with_enabled(result.enabled, reason=result.reason)

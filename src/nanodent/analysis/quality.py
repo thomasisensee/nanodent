@@ -14,6 +14,43 @@ class QualityCheckResult:
     reason: str | None = None
     onset_fraction: float | None = None
     onset_disp_nm: float | None = None
+    rise_width_fraction: float | None = None
+
+
+def classify_flat_force(
+    force_uN: ArrayLike,
+    *,
+    min_robust_force_span_uN: float = 200.0,
+    low_quantile: float = 0.05,
+    high_quantile: float = 0.95,
+) -> QualityCheckResult:
+    """Classify runs whose force signal remains nearly flat throughout.
+
+    Args:
+        force_uN: Force values from the test section.
+        min_robust_force_span_uN: Minimum acceptable robust force span between
+            the selected quantiles.
+        low_quantile: Lower quantile used for the robust force span.
+        high_quantile: Upper quantile used for the robust force span.
+
+    Returns:
+        Quality classification result. Flat signals are marked with reason
+        `flat_force`.
+    """
+
+    y = np.asarray(force_uN, dtype=np.float64)
+    if y.ndim != 1:
+        raise ValueError("Flat-force classification requires a 1D signal.")
+    if len(y) == 0:
+        return QualityCheckResult(enabled=True)
+
+    low_value, high_value = np.quantile(y, [low_quantile, high_quantile])
+    robust_span = float(high_value - low_value)
+    enabled = robust_span >= min_robust_force_span_uN
+    return QualityCheckResult(
+        enabled=enabled,
+        reason=None if enabled else "flat_force",
+    )
 
 
 def classify_delayed_onset(
@@ -22,16 +59,18 @@ def classify_delayed_onset(
     *,
     bin_count: int = 24,
     baseline_bin_count: int = 4,
-    onset_force_fraction: float = 0.1,
+    onset_force_fraction: float = 0.05,
+    target_force_fraction: float = 0.5,
     sustained_bins: int = 2,
-    max_onset_fraction: float = 0.7,
+    max_rise_width_fraction: float = 0.2,
 ) -> QualityCheckResult:
-    """Classify curves whose useful rise begins too late in displacement.
+    """Classify curves whose onset rises too gradually in displacement.
 
     The heuristic sorts the force-displacement samples by displacement,
-    averages them onto coarse displacement bins, and treats the onset as the
-    first sustained rise above the initial baseline plus a fraction of the
-    dynamic range.
+    averages them onto coarse displacement bins, and measures how much
+    displacement the coarse curve needs to rise from an early threshold to a
+    mid-force threshold. Curves whose rise width is too broad are classified
+    as gradual onset.
 
     Args:
         disp_nm: Displacement values from the test section.
@@ -40,15 +79,16 @@ def classify_delayed_onset(
             point-to-point loops and noise.
         baseline_bin_count: Number of leftmost bins used to estimate the
             initial baseline force level.
-        onset_force_fraction: Fraction of the binned dynamic range used to
-            define onset.
-        sustained_bins: Number of consecutive bins that must exceed the onset
-            threshold before the onset is accepted.
-        max_onset_fraction: Maximum allowed relative onset position within the
-            displacement span. Larger values are classified as delayed onset.
+        onset_force_fraction: Lower force fraction used to define onset.
+        target_force_fraction: Upper force fraction used to define where the
+            onset rise is considered complete.
+        sustained_bins: Number of consecutive bins that must exceed the lower
+            onset threshold before the onset is accepted.
+        max_rise_width_fraction: Maximum allowed relative displacement width
+            between the lower and upper force thresholds.
 
     Returns:
-        Quality classification result with an optional onset location.
+        Quality classification result with optional onset diagnostics.
     """
 
     x = np.asarray(disp_nm, dtype=np.float64)
@@ -60,14 +100,138 @@ def classify_delayed_onset(
     if len(x) == 0:
         return QualityCheckResult(enabled=True)
 
-    order = np.argsort(x)
-    sorted_x = x[order]
-    sorted_y = y[order]
+    sorted_x, coarse_disp, coarse_force = _coarse_force_curve(
+        x, y, bin_count=bin_count
+    )
+    if coarse_force.size == 0:
+        return QualityCheckResult(enabled=True)
+
     min_x = float(sorted_x[0])
     max_x = float(sorted_x[-1])
     if np.isclose(min_x, max_x):
         return QualityCheckResult(enabled=True)
 
+    baseline_count = min(max(baseline_bin_count, 1), len(coarse_force))
+    baseline = float(np.median(coarse_force[:baseline_count]))
+    dynamic_range = float(np.max(coarse_force) - baseline)
+    if dynamic_range <= 0.0:
+        return QualityCheckResult(enabled=True)
+
+    threshold = baseline + onset_force_fraction * dynamic_range
+    target_threshold = baseline + target_force_fraction * dynamic_range
+    required_bins = min(max(sustained_bins, 1), len(coarse_force))
+
+    onset_index: int | None = None
+    for index in range(len(coarse_force) - required_bins + 1):
+        if np.all(coarse_force[index : index + required_bins] >= threshold):
+            onset_index = index
+            break
+
+    if onset_index is None:
+        return QualityCheckResult(enabled=True)
+
+    onset_disp = float(coarse_disp[onset_index])
+    onset_fraction = (onset_disp - min_x) / (max_x - min_x)
+    target_index = next(
+        (
+            index
+            for index in range(onset_index, len(coarse_force))
+            if coarse_force[index] >= target_threshold
+        ),
+        None,
+    )
+    if target_index is None:
+        return QualityCheckResult(
+            enabled=False,
+            reason="gradual_onset",
+            onset_fraction=float(onset_fraction),
+            onset_disp_nm=onset_disp,
+            rise_width_fraction=1.0,
+        )
+
+    rise_width_fraction = float(
+        coarse_disp[target_index] - coarse_disp[onset_index]
+    ) / (max_x - min_x)
+    enabled = rise_width_fraction <= max_rise_width_fraction
+    return QualityCheckResult(
+        enabled=enabled,
+        reason=None if enabled else "gradual_onset",
+        onset_fraction=float(onset_fraction),
+        onset_disp_nm=onset_disp,
+        rise_width_fraction=float(rise_width_fraction),
+    )
+
+
+def classify_quality(
+    disp_nm: ArrayLike,
+    force_uN: ArrayLike,
+    *,
+    min_robust_force_span_uN: float = 200.0,
+    low_quantile: float = 0.05,
+    high_quantile: float = 0.95,
+    bin_count: int = 24,
+    baseline_bin_count: int = 4,
+    onset_force_fraction: float = 0.05,
+    target_force_fraction: float = 0.5,
+    sustained_bins: int = 2,
+    max_rise_width_fraction: float = 0.2,
+) -> QualityCheckResult:
+    """Run the enabled quality heuristics in order and return the first match.
+
+    Args:
+        disp_nm: Displacement values from the test section.
+        force_uN: Force values from the test section.
+        min_robust_force_span_uN: Minimum acceptable robust force span for the
+            flat-force check.
+        low_quantile: Lower quantile used for the robust force span.
+        high_quantile: Upper quantile used for the robust force span.
+        bin_count: Number of coarse displacement bins for delayed-onset
+            detection.
+        baseline_bin_count: Number of early bins used for baseline force.
+        onset_force_fraction: Lower force fraction used to define onset.
+        target_force_fraction: Upper force fraction used to define where the
+            onset rise is considered complete.
+        sustained_bins: Number of consecutive bins that must exceed the onset
+            threshold.
+        max_rise_width_fraction: Maximum allowed displacement width between the
+            lower and upper onset thresholds before disabling the experiment.
+
+    Returns:
+        First disabling classification that matches, otherwise an enabled
+        result.
+    """
+
+    flat_force_result = classify_flat_force(
+        force_uN,
+        min_robust_force_span_uN=min_robust_force_span_uN,
+        low_quantile=low_quantile,
+        high_quantile=high_quantile,
+    )
+    if not flat_force_result.enabled:
+        return flat_force_result
+
+    return classify_delayed_onset(
+        disp_nm,
+        force_uN,
+        bin_count=bin_count,
+        baseline_bin_count=baseline_bin_count,
+        onset_force_fraction=onset_force_fraction,
+        target_force_fraction=target_force_fraction,
+        sustained_bins=sustained_bins,
+        max_rise_width_fraction=max_rise_width_fraction,
+    )
+
+
+def _coarse_force_curve(
+    disp_nm: np.ndarray, force_uN: np.ndarray, *, bin_count: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return displacement-sorted samples and a coarse binned force curve."""
+
+    order = np.argsort(disp_nm)
+    sorted_x = disp_nm[order]
+    sorted_y = force_uN[order]
+    min_x = float(sorted_x[0])
+    max_x = float(sorted_x[-1])
     edges = np.linspace(min_x, max_x, max(bin_count, 2) + 1)
     centers = 0.5 * (edges[:-1] + edges[1:])
     binned_force: list[float] = []
@@ -84,35 +248,8 @@ def classify_delayed_onset(
         binned_force.append(float(np.mean(sorted_y[mask])))
         binned_disp.append(float(center))
 
-    if not binned_force:
-        return QualityCheckResult(enabled=True)
-
-    coarse_force = np.asarray(binned_force, dtype=np.float64)
-    coarse_disp = np.asarray(binned_disp, dtype=np.float64)
-    baseline_count = min(max(baseline_bin_count, 1), len(coarse_force))
-    baseline = float(np.median(coarse_force[:baseline_count]))
-    dynamic_range = float(np.max(coarse_force) - baseline)
-    if dynamic_range <= 0.0:
-        return QualityCheckResult(enabled=True)
-
-    threshold = baseline + onset_force_fraction * dynamic_range
-    required_bins = min(max(sustained_bins, 1), len(coarse_force))
-
-    onset_index: int | None = None
-    for index in range(len(coarse_force) - required_bins + 1):
-        if np.all(coarse_force[index : index + required_bins] >= threshold):
-            onset_index = index
-            break
-
-    if onset_index is None:
-        return QualityCheckResult(enabled=True)
-
-    onset_disp = float(coarse_disp[onset_index])
-    onset_fraction = (onset_disp - min_x) / (max_x - min_x)
-    enabled = onset_fraction <= max_onset_fraction
-    return QualityCheckResult(
-        enabled=enabled,
-        reason=None if enabled else "delayed_onset",
-        onset_fraction=float(onset_fraction),
-        onset_disp_nm=onset_disp,
+    return (
+        sorted_x,
+        np.asarray(binned_disp, dtype=np.float64),
+        np.asarray(binned_force, dtype=np.float64),
     )

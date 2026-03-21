@@ -10,6 +10,8 @@ from nanodent.analysis.fit import FitResult, curve_fit_model
 from nanodent.analysis.quality import (
     QualityCheckResult,
     classify_delayed_onset,
+    classify_flat_force,
+    classify_quality,
 )
 from nanodent.io import load_experiment, load_folder
 from nanodent.models import (
@@ -46,6 +48,8 @@ __all__ = [
     "__version__",
     "align_curve",
     "classify_delayed_onset",
+    "classify_flat_force",
+    "classify_quality",
     "curve_fit_model",
     "gradient",
     "load_experiment",

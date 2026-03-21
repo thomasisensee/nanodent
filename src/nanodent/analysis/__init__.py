@@ -7,6 +7,8 @@ from nanodent.analysis.fit import FitResult, curve_fit_model
 from nanodent.analysis.quality import (
     QualityCheckResult,
     classify_delayed_onset,
+    classify_flat_force,
+    classify_quality,
 )
 
 __all__ = [
@@ -15,6 +17,8 @@ __all__ = [
     "QualityCheckResult",
     "align_curve",
     "classify_delayed_onset",
+    "classify_flat_force",
+    "classify_quality",
     "curve_fit_model",
     "gradient",
     "savgol",
