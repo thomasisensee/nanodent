@@ -340,7 +340,7 @@ def _plot_groups_grid(
             derivative=derivative,
             xlim=xlim,
             ylim=ylim,
-            show_legend=True,
+            show_legend=False,
         )
         if slope_ax is not None:
             slope_ax.set_title(f"Group {group.index} slope")
