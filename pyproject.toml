@@ -13,7 +13,7 @@ maintainers = [
     { name = "Thomas Isensee", email = "thomas.isensee@iwr.uni-heidelberg.de" },
 ]
 version = "0.0.1"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license-files = ["LICEN[CS]E*"]
 license = "MIT"
 classifiers = [
@@ -32,6 +32,16 @@ tests = [
     "pytest",
     "pytest-cov",
     "nbval",
+]
+lint = [
+    "mypy",
+    "ruff",
+]
+dev = [
+    "mypy",
+    "pytest",
+    "pytest-cov",
+    "ruff",
 ]
 
 [project.urls]
@@ -54,3 +64,13 @@ python_version = "3.14"
 warn_return_any = true
 warn_unused_configs = true
 exclude = "doc"
+
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+]
