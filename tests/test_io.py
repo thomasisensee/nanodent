@@ -73,6 +73,62 @@ def test_load_experiment_accepts_iso_8859_1_micro_symbol(
     assert experiment.test["force_uN"][1] == pytest.approx(3.0)
 
 
+def test_load_experiment_supports_zero_point_optional_sections(
+    tmp_path: Path,
+) -> None:
+    file_path = tmp_path / "zero_sections.hld"
+    file_path.write_text(
+        "\n".join(
+            [
+                "File Version: Demo",
+                "Test Type: Indentation",
+                "Time Stamp: Wed Mar 04 13:56:27 2026",
+                "Test Temp: 23 deg C",
+                "Test Humidity: 50 %",
+                "Sample Approach Data Points: 0",
+                "Time_s\tDisp_nm",
+                "Drift Measurement Data Points: 0",
+                "Time_s\tDisp_nm",
+                "Test Data Points: 2",
+                "Time_s\tDisp_nm\tForce_µN",
+                "0.0\t0.0\t0.0",
+                "1.0\t2.0\t3.0",
+            ]
+        ),
+        encoding="iso-8859-1",
+    )
+
+    experiment = load_experiment(file_path)
+
+    assert experiment.approach is not None
+    assert experiment.drift is not None
+    assert len(experiment.approach) == 0
+    assert len(experiment.drift) == 0
+    assert len(experiment.test) == 2
+
+
+def test_load_experiment_reports_file_path_on_parse_error(
+    tmp_path: Path,
+) -> None:
+    file_path = tmp_path / "broken.hld"
+    file_path.write_text(
+        "\n".join(
+            [
+                "File Version: Demo",
+                "Test Type: Indentation",
+                "Time Stamp: Wed Mar 04 13:56:27 2026",
+                "Test Data Points: 1",
+                "Time_s\tDisp_nm\tForce_µN",
+                "0.0\t0.0",
+            ]
+        ),
+        encoding="iso-8859-1",
+    )
+
+    with pytest.raises(ValueError, match="broken.hld"):
+        load_experiment(file_path)
+
+
 def test_load_folder_discovers_siblings_and_sorts_experiments() -> None:
     study = load_folder(DATA_DIR)
 

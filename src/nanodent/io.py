@@ -153,7 +153,12 @@ def _parse_hld_file(experiment_paths: ExperimentPaths) -> Experiment:
     """
 
     text = experiment_paths.hld_path.read_text(encoding="iso-8859-1")
-    metadata_entries, sections = _parse_hld_text(text)
+    try:
+        metadata_entries, sections = _parse_hld_text(text)
+    except Exception as exc:
+        raise ValueError(
+            f"Failed to parse {experiment_paths.hld_path}: {exc}"
+        ) from exc
     metadata = _metadata_mapping(metadata_entries)
     timestamp = datetime.strptime(metadata["Time Stamp"], _TIMESTAMP_FORMAT)
     return Experiment(
@@ -268,6 +273,18 @@ def _make_signal_table(
         _normalize_column_name(column) for column in raw_columns
     ]
     matrix = np.asarray(list(rows), dtype=np.float64)
+    if matrix.size == 0:
+        matrix = np.empty((0, len(normalized_columns)), dtype=np.float64)
+    elif matrix.ndim != 2:
+        raise ValueError(
+            "Section data could not be interpreted as a "
+            "rectangular numeric table."
+        )
+    if matrix.shape[1] != len(normalized_columns):
+        raise ValueError(
+            f"Section declared {len(normalized_columns)} columns "
+            f"but contained {matrix.shape[1]}."
+        )
     columns = {
         normalized: matrix[:, index].astype(np.float64, copy=False)
         for index, normalized in enumerate(normalized_columns)
