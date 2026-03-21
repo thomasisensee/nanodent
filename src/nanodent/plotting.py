@@ -180,14 +180,6 @@ def plot_group_timeline(
             mdates.date2num(experiment.timestamp)
             for experiment in group.experiments
         ]
-        ax.plot(
-            timestamps,
-            np.full(len(timestamps), y_positions[index]),
-            linestyle="None",
-            marker=marker,
-            markersize=markersize,
-            color=color,
-        )
 
     ax.xaxis_date()
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d\n%H:%M"))
