@@ -12,8 +12,9 @@ def test_group_by_time_gap_creates_two_default_groups() -> None:
 
     groups = study.group_by_time_gap()
 
-    assert [len(group.experiments) for group in groups] == [2, 2]
-    assert groups[0].stems == (
+    assert [len(group.experiments) for group in groups] == [1, 2, 2]
+    assert groups[0].stems == ("Tritium_Retention_Study_04.03.2026_0005",)
+    assert groups[1].stems == (
         "Tritium_Retention_Study_04.03.2026_0000",
         "Tritium_Retention_Study_04.03.2026_0001",
     )
@@ -40,9 +41,18 @@ def test_group_by_time_gap_keeps_exact_boundary_in_same_group() -> None:
 
 def test_regroup_supports_manual_group_overrides() -> None:
     study = load_folder(DATA_DIR)
+    by_stem = {experiment.stem: experiment for experiment in study.experiments}
 
     groups = study.regroup(
-        [[study.experiments[0], study.experiments[2]], [study.experiments[1]]]
+        [
+            [
+                by_stem["Tritium_Retention_Study_04.03.2026_0000"],
+                by_stem[
+                    "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0059"
+                ],
+            ],
+            [by_stem["Tritium_Retention_Study_04.03.2026_0001"]],
+        ]
     )
 
     assert [group.index for group in groups] == [0, 1]
@@ -57,11 +67,75 @@ def test_describe_groups_returns_group_summaries() -> None:
 
     summaries = study.describe_groups()
 
-    assert [summary["experiment_count"] for summary in summaries] == [2, 2]
+    assert [summary["experiment_count"] for summary in summaries] == [1, 2, 2]
     assert summaries[0]["index"] == 0
-    assert summaries[0]["start"] == study.experiments[0].timestamp
-    assert summaries[0]["end"] == study.experiments[1].timestamp
-    assert summaries[0]["stems"] == (
+    assert summaries[0]["enabled_count"] == 1
+    assert summaries[0]["disabled_count"] == 0
+    assert summaries[1]["start"] == study.experiments[1].timestamp
+    assert summaries[1]["end"] == study.experiments[2].timestamp
+    assert summaries[1]["stems"] == (
         "Tritium_Retention_Study_04.03.2026_0000",
         "Tritium_Retention_Study_04.03.2026_0001",
     )
+
+
+def test_describe_groups_includes_disabled_experiments_by_default() -> None:
+    study = load_folder(DATA_DIR).classify_delayed_onset()
+
+    summaries = study.describe_groups()
+
+    assert [summary["disabled_count"] for summary in summaries] == [1, 0, 1]
+    assert summaries[0]["enabled_count"] == 0
+    assert summaries[2]["enabled_count"] == 1
+
+
+def test_classify_delayed_onset_disables_known_bad_experiment() -> None:
+    study = load_folder(DATA_DIR)
+
+    classified = study.classify_delayed_onset()
+    by_stem = {
+        experiment.stem: experiment for experiment in classified.experiments
+    }
+
+    assert by_stem["Tritium_Retention_Study_04.03.2026_0005"].enabled is False
+    assert (
+        by_stem["Tritium_Retention_Study_04.03.2026_0005"].disabled_reason
+        == "delayed_onset"
+    )
+    assert by_stem["Tritium_Retention_Study_04.03.2026_0000"].enabled is True
+    assert (
+        by_stem["Tritium_Retention_Study_04.03.2026_0000"].disabled_reason
+        is None
+    )
+
+
+def test_disabled_experiments_are_ignored_by_default_grouping() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(
+        "Tritium_Retention_Study_04.03.2026_0005"
+    )
+
+    assert [len(group.experiments) for group in study.group_by_time_gap()] == [
+        2,
+        2,
+    ]
+    assert [
+        len(group.experiments)
+        for group in study.group_by_time_gap(include_disabled=True)
+    ] == [1, 2, 2]
+
+
+def test_manual_enable_and_disable_return_new_studies() -> None:
+    study = load_folder(DATA_DIR)
+
+    disabled = study.disable_experiments(
+        "Tritium_Retention_Study_04.03.2026_0005", reason="manual"
+    )
+    restored = disabled.enable_experiments(
+        "Tritium_Retention_Study_04.03.2026_0005"
+    )
+
+    assert study.experiments[0].enabled is True
+    assert disabled.experiments[0].enabled is False
+    assert disabled.experiments[0].disabled_reason == "manual"
+    assert restored.experiments[0].enabled is True
+    assert restored.experiments[0].disabled_reason is None

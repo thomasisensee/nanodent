@@ -5,6 +5,7 @@ from nanodent.analysis.align import align_curve
 from nanodent.analysis.derivative import gradient
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.fit import curve_fit_model
+from nanodent.analysis.quality import classify_delayed_onset
 
 
 def test_savgol_preserves_shape_and_reduces_noise() -> None:
@@ -67,3 +68,43 @@ def test_curve_fit_model_smoke_test() -> None:
     assert result.parameters[0] == pytest.approx(2.0, rel=1e-3)
     assert result.parameters[1] == pytest.approx(1.5, rel=1e-3)
     assert len(result.x_fit) == 200
+
+
+def test_classify_delayed_onset_detects_late_rise() -> None:
+    x = np.linspace(0.0, 100.0, 1201)
+    y = np.zeros_like(x)
+    y[x >= 82.0] = 45.0 * (x[x >= 82.0] - 82.0)
+
+    result = classify_delayed_onset(
+        x,
+        y,
+        bin_count=20,
+        baseline_bin_count=3,
+        onset_force_fraction=0.1,
+        sustained_bins=2,
+        max_onset_fraction=0.7,
+    )
+
+    assert result.enabled is False
+    assert result.reason == "delayed_onset"
+    assert result.onset_fraction == pytest.approx(0.825, abs=0.08)
+
+
+def test_classify_delayed_onset_keeps_early_rise_enabled() -> None:
+    x = np.linspace(0.0, 100.0, 1201)
+    y = np.zeros_like(x)
+    y[x >= 38.0] = 45.0 * (x[x >= 38.0] - 38.0)
+
+    result = classify_delayed_onset(
+        x,
+        y,
+        bin_count=20,
+        baseline_bin_count=3,
+        onset_force_fraction=0.1,
+        sustained_bins=2,
+        max_onset_fraction=0.7,
+    )
+
+    assert result.enabled is True
+    assert result.reason is None
+    assert result.onset_fraction == pytest.approx(0.425, abs=0.08)

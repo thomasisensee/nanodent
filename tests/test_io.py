@@ -32,6 +32,8 @@ def test_load_experiment_parses_sections_and_metadata() -> None:
     assert experiment.test["force_uN"].dtype.name == "float64"
     assert len(experiment.segment_definitions) == 5
     assert experiment.segment_definitions[2].points == 997
+    assert experiment.enabled is True
+    assert experiment.disabled_reason is None
 
 
 def test_normalize_column_name_handles_micro_variants() -> None:
@@ -132,8 +134,9 @@ def test_load_experiment_reports_file_path_on_parse_error(
 def test_load_folder_discovers_siblings_and_sorts_experiments() -> None:
     study = load_folder(DATA_DIR)
 
-    assert len(study.experiments) == 4
+    assert len(study.experiments) == 5
     assert [experiment.stem for experiment in study.experiments] == [
+        "Tritium_Retention_Study_04.03.2026_0005",
         "Tritium_Retention_Study_04.03.2026_0000",
         "Tritium_Retention_Study_04.03.2026_0001",
         "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0059",

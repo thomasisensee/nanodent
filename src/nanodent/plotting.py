@@ -37,6 +37,7 @@ def plot_groups(
     show_slope: bool = False,
     clip_aligned_negative: bool = True,
     max_gap: timedelta = timedelta(minutes=30),
+    include_disabled: bool = False,
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] | None = None,
     slope_ylim: tuple[float, float] | None = None,
@@ -65,6 +66,8 @@ def plot_groups(
         clip_aligned_negative: If `True`, hide aligned samples whose shifted
             x-values are negative.
         max_gap: Time gap used when `groups` is a `Study`.
+        include_disabled: Whether disabled experiments should remain visible in
+            the plotted groups.
         xlim: Optional x-axis limits applied to every subplot.
         ylim: Optional y-axis limits applied to the main curve panels.
         slope_ylim: Optional y-axis limits applied to slope panels.
@@ -78,7 +81,9 @@ def plot_groups(
         object is a NumPy object array; in `overlay` mode it is a single axes.
     """
 
-    resolved_groups = _coerce_groups(groups, max_gap=max_gap)
+    resolved_groups = _coerce_groups(
+        groups, max_gap=max_gap, include_disabled=include_disabled
+    )
     if layout == "grid" and ax is not None:
         raise ValueError(
             "The 'ax' parameter is only supported when layout='overlay'."
@@ -126,6 +131,7 @@ def plot_group_timeline(
     groups: Study | Sequence[ExperimentGroup],
     *,
     max_gap: timedelta = timedelta(minutes=30),
+    include_disabled: bool = False,
     cmap: str = "tab10",
     marker: str = "o",
     markersize: float = 6.0,
@@ -137,6 +143,8 @@ def plot_group_timeline(
         groups: Study to group automatically, or explicit experiment groups to
             display as-is.
         max_gap: Time gap used when `groups` is a `Study`.
+        include_disabled: Whether disabled experiments should remain visible in
+            the timeline.
         cmap: Matplotlib colormap name used for group colors.
         marker: Marker style used for experiment timestamps.
         markersize: Marker size used for experiment timestamps.
@@ -147,7 +155,9 @@ def plot_group_timeline(
         Figure and axes containing the group timeline visualization.
     """
 
-    resolved_groups = _coerce_timeline_groups(groups, max_gap=max_gap)
+    resolved_groups = _coerce_timeline_groups(
+        groups, max_gap=max_gap, include_disabled=include_disabled
+    )
     figure: Figure
     if ax is None:
         figure, ax = plt.subplots(
@@ -175,6 +185,18 @@ def plot_group_timeline(
             (y_positions[index] - 0.35, 0.7),
             facecolors=color,
             alpha=0.25,
+        )
+        timestamps = [
+            mdates.date2num(experiment.timestamp)
+            for experiment in group.experiments
+        ]
+        ax.plot(
+            timestamps,
+            np.full(len(timestamps), y_positions[index], dtype=float),
+            linestyle="",
+            marker=marker,
+            markersize=markersize,
+            color=color,
         )
 
     ax.xaxis_date()
@@ -457,7 +479,7 @@ def _gradient_or_zeros(
 
 
 def _coerce_groups(
-    groups: LineGroups, *, max_gap: timedelta
+    groups: LineGroups, *, max_gap: timedelta, include_disabled: bool
 ) -> list[ExperimentGroup]:
     """Normalize supported group inputs into experiment groups.
 
@@ -470,17 +492,26 @@ def _coerce_groups(
     """
 
     if isinstance(groups, Study):
-        return groups.group_by_time_gap(max_gap=max_gap)
+        return groups.group_by_time_gap(
+            max_gap=max_gap, include_disabled=include_disabled
+        )
     if isinstance(groups, ExperimentGroup):
-        return [groups]
+        return _filtered_groups([groups], include_disabled=include_disabled)
     groups_list = list(groups)
     if not groups_list:
         return []
     first_item = groups_list[0]
     if isinstance(first_item, ExperimentGroup):
-        return list(groups_list)
+        return _filtered_groups(groups_list, include_disabled=include_disabled)
     if isinstance(first_item, Experiment):
-        return [ExperimentGroup(experiments=tuple(groups_list), index=0)]
+        selected_experiments = tuple(
+            experiment
+            for experiment in groups_list
+            if include_disabled or experiment.enabled
+        )
+        if not selected_experiments:
+            return []
+        return [ExperimentGroup(experiments=selected_experiments, index=0)]
     raise TypeError(
         "plot_groups expects a Study, ExperimentGroup, or a sequence "
         "of those objects."
@@ -488,7 +519,10 @@ def _coerce_groups(
 
 
 def _coerce_timeline_groups(
-    groups: Study | Sequence[ExperimentGroup], *, max_gap: timedelta
+    groups: Study | Sequence[ExperimentGroup],
+    *,
+    max_gap: timedelta,
+    include_disabled: bool,
 ) -> list[ExperimentGroup]:
     """Normalize supported group inputs into timeline-ready experiment groups.
 
@@ -501,5 +535,27 @@ def _coerce_timeline_groups(
     """
 
     if isinstance(groups, Study):
-        return groups.group_by_time_gap(max_gap=max_gap)
-    return list(groups)
+        return groups.group_by_time_gap(
+            max_gap=max_gap, include_disabled=include_disabled
+        )
+    return _filtered_groups(groups, include_disabled=include_disabled)
+
+
+def _filtered_groups(
+    groups: Sequence[ExperimentGroup], *, include_disabled: bool
+) -> list[ExperimentGroup]:
+    """Return groups with optional filtering of disabled experiments."""
+
+    filtered: list[ExperimentGroup] = []
+    for group in groups:
+        experiments = tuple(
+            experiment
+            for experiment in group.experiments
+            if include_disabled or experiment.enabled
+        )
+        if not experiments:
+            continue
+        filtered.append(
+            ExperimentGroup(experiments=experiments, index=group.index)
+        )
+    return filtered

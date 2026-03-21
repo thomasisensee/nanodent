@@ -9,10 +9,11 @@ matplotlib.use("Agg")
 from nanodent import load_folder, plot_group_timeline, plot_groups
 
 DATA_DIR = Path(__file__).parent / "data"
+BAD_STEM = "Tritium_Retention_Study_04.03.2026_0005"
 
 
 def test_plot_groups_defaults_to_one_panel_per_group() -> None:
-    study = load_folder(DATA_DIR)
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEM)
     groups = study.group_by_time_gap()
 
     figure, axes = plot_groups(groups, linewidth=2.5, cmap="plasma")
@@ -31,7 +32,7 @@ def test_plot_groups_defaults_to_one_panel_per_group() -> None:
 
 
 def test_plot_groups_restarts_colormap_for_each_group() -> None:
-    study = load_folder(DATA_DIR)
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEM)
     groups = study.group_by_time_gap()
 
     _, axes = plot_groups(groups, cmap="plasma")
@@ -41,7 +42,7 @@ def test_plot_groups_restarts_colormap_for_each_group() -> None:
 
 
 def test_plot_groups_overlay_preserves_combined_axes_behavior() -> None:
-    study = load_folder(DATA_DIR)
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEM)
     groups = study.group_by_time_gap()
 
     figure, axes = plot_groups(groups, layout="overlay", cmap="plasma")
@@ -52,7 +53,7 @@ def test_plot_groups_overlay_preserves_combined_axes_behavior() -> None:
 
 
 def test_plot_groups_overlay_restarts_colormap_for_each_group() -> None:
-    study = load_folder(DATA_DIR)
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEM)
     groups = study.group_by_time_gap()
 
     _, axes = plot_groups(groups, layout="overlay", cmap="plasma")
@@ -62,7 +63,7 @@ def test_plot_groups_overlay_restarts_colormap_for_each_group() -> None:
 
 
 def test_plot_groups_can_show_separate_slope_panels() -> None:
-    study = load_folder(DATA_DIR)
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEM)
     groups = study.group_by_time_gap()
 
     figure, axes = plot_groups(
@@ -84,7 +85,7 @@ def test_plot_groups_can_show_separate_slope_panels() -> None:
 
 
 def test_plot_groups_alignment_clips_negative_shifted_x_by_default() -> None:
-    study = load_folder(DATA_DIR)
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEM)
     groups = study.group_by_time_gap()
 
     _, axes = plot_groups(
@@ -96,7 +97,7 @@ def test_plot_groups_alignment_clips_negative_shifted_x_by_default() -> None:
 
 
 def test_plot_groups_can_keep_negative_shifted_x_when_requested() -> None:
-    study = load_folder(DATA_DIR)
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEM)
     groups = study.group_by_time_gap()
 
     _, axes = plot_groups(
@@ -109,7 +110,7 @@ def test_plot_groups_can_keep_negative_shifted_x_when_requested() -> None:
 
 
 def test_plot_group_timeline_supports_study_and_explicit_groups() -> None:
-    study = load_folder(DATA_DIR)
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEM)
     groups = study.group_by_time_gap()
 
     figure, axes = plot_group_timeline(study)
@@ -126,9 +127,31 @@ def test_plot_group_timeline_supports_study_and_explicit_groups() -> None:
 
 
 def test_plot_groups_rejects_slope_panels_in_overlay_mode() -> None:
-    study = load_folder(DATA_DIR)
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEM)
 
     with pytest.raises(ValueError, match="layout='grid'"):
         plot_groups(
             study.group_by_time_gap(), layout="overlay", show_slope=True
         )
+
+
+def test_plot_groups_can_include_disabled_experiments_when_requested() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEM)
+
+    _, default_axes = plot_groups(study, layout="overlay")
+    _, all_axes = plot_groups(study, layout="overlay", include_disabled=True)
+
+    assert len(default_axes.lines) == 4
+    assert len(all_axes.lines) == 5
+
+
+def test_plot_group_timeline_can_include_disabled_experiments() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEM)
+
+    _, default_axes = plot_group_timeline(study)
+    _, all_axes = plot_group_timeline(study, include_disabled=True)
+
+    assert len(default_axes.collections) == 2
+    assert len(default_axes.lines) == 2
+    assert len(all_axes.collections) == 3
+    assert len(all_axes.lines) == 3

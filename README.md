@@ -41,11 +41,15 @@ from datetime import timedelta
 from nanodent import load_folder, plot_group_timeline, plot_groups
 
 study = load_folder("path/to/experiment-folder")
-summaries = study.describe_groups()
+filtered_study = study.classify_delayed_onset()
+summaries = filtered_study.describe_groups()
 
-timeline_fig, timeline_ax = plot_group_timeline(study, max_gap=timedelta(minutes=30))
+timeline_fig, timeline_ax = plot_group_timeline(
+    filtered_study,
+    max_gap=timedelta(minutes=30),
+)
 
-groups = study.group_by_time_gap()
+groups = filtered_study.group_by_time_gap()
 fig, axes = plot_groups(
     groups,
     x="disp_nm",
@@ -56,6 +60,11 @@ fig, axes = plot_groups(
     xlim=(0.0, 1500.0),
 )
 ```
+
+`Study.classify_delayed_onset()` keeps all experiments loaded but marks
+heuristically bad runs as `enabled=False` with a short `disabled_reason`.
+Grouping, plotting, and study summaries ignore disabled experiments by default;
+pass `include_disabled=True` when you want to review them explicitly.
 
 The public API also exposes:
 

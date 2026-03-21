@@ -7,6 +7,10 @@ from nanodent.analysis.align import AlignmentResult, align_curve
 from nanodent.analysis.derivative import gradient
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.fit import FitResult, curve_fit_model
+from nanodent.analysis.quality import (
+    QualityCheckResult,
+    classify_delayed_onset,
+)
 from nanodent.io import load_experiment, load_folder
 from nanodent.models import (
     Experiment,
@@ -34,12 +38,14 @@ __all__ = [
     "ExperimentGroup",
     "ExperimentPaths",
     "FitResult",
+    "QualityCheckResult",
     "MetadataEntry",
     "SegmentDefinition",
     "SignalTable",
     "Study",
     "__version__",
     "align_curve",
+    "classify_delayed_onset",
     "curve_fit_model",
     "gradient",
     "load_experiment",

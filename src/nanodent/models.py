@@ -1,6 +1,6 @@
 """Core domain models for nanoindentation experiments."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -115,6 +115,8 @@ class Experiment:
     temperature_c: float | None = None
     humidity_percent: float | None = None
     segment_definitions: tuple[SegmentDefinition, ...] = ()
+    enabled: bool = True
+    disabled_reason: str | None = None
 
     @property
     def stem(self) -> str:
@@ -161,9 +163,32 @@ class Experiment:
             "timestamp": self.timestamp,
             "temperature_c": self.temperature_c,
             "humidity_percent": self.humidity_percent,
+            "enabled": self.enabled,
+            "disabled_reason": self.disabled_reason,
             "approach_points": len(self.approach)
             if self.approach is not None
             else 0,
             "drift_points": len(self.drift) if self.drift is not None else 0,
             "test_points": len(self.test),
         }
+
+    def with_enabled(
+        self, enabled: bool, *, reason: str | None = None
+    ) -> "Experiment":
+        """Return a copy of the experiment with updated enabled state.
+
+        Args:
+            enabled: Whether the experiment should participate in default
+                grouping, plotting, and analysis flows.
+            reason: Optional short reason recorded when disabling an
+                experiment. Enabled experiments always clear the reason.
+
+        Returns:
+            New experiment instance with updated enabled metadata.
+        """
+
+        return replace(
+            self,
+            enabled=enabled,
+            disabled_reason=None if enabled else reason,
+        )
