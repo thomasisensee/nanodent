@@ -1,12 +1,20 @@
 repos:
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.9.1
+    hooks:
+      - id: nbstripout
+        files: ".ipynb"
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.7
     hooks:
       # Run the linter
       - id: ruff-check
         args: [ --fix, --show-fixes ]
+        types_or: [ python, pyi, pyproject ]
       # Run the formatter
       - id: ruff-format
+        types_or: [ python, pyi ]
 
   # Add some general purpose useful hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
