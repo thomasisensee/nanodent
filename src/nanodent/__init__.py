@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.figure import Figure
 
+    from nanodent.plotting import AxesGrid
+
 try:
     __version__ = metadata.version("nanodent")
 except metadata.PackageNotFoundError:
@@ -42,12 +44,13 @@ __all__ = [
     "gradient",
     "load_experiment",
     "load_folder",
+    "plot_group_timeline",
     "plot_groups",
     "savgol",
 ]
 
 
-def plot_groups(*args: Any, **kwargs: Any) -> tuple["Figure", "Axes"]:
+def plot_groups(*args: Any, **kwargs: Any) -> tuple["Figure", "AxesGrid"]:
     """Lazily import Matplotlib plotting helpers when needed.
 
     Args:
@@ -61,3 +64,21 @@ def plot_groups(*args: Any, **kwargs: Any) -> tuple["Figure", "Axes"]:
     from nanodent.plotting import plot_groups as _plot_groups
 
     return _plot_groups(*args, **kwargs)
+
+
+def plot_group_timeline(*args: Any, **kwargs: Any) -> tuple["Figure", "Axes"]:
+    """Lazily import the group timeline plotting helper when needed.
+
+    Args:
+        *args: Positional args forwarded to
+            `nanodent.plotting.plot_group_timeline`.
+        **kwargs: Keyword args forwarded to
+            `nanodent.plotting.plot_group_timeline`.
+
+    Returns:
+        Figure and axes containing the group timeline visualization.
+    """
+
+    from nanodent.plotting import plot_group_timeline as _plot_group_timeline
+
+    return _plot_group_timeline(*args, **kwargs)

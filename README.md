@@ -35,18 +35,24 @@ python -m pytest
 `.tdm` and `.tdx` file paths attached to each experiment for future extension.
 
 ```python
-from nanodent import load_folder, plot_groups
+from datetime import timedelta
+
+from nanodent import load_folder, plot_group_timeline, plot_groups
 
 study = load_folder("path/to/experiment-folder")
-groups = study.group_by_time_gap()
 summaries = study.describe_groups()
 
-fig, ax = plot_groups(
+timeline_fig, timeline_ax = plot_group_timeline(study, max_gap=timedelta(minutes=30))
+
+groups = study.group_by_time_gap()
+fig, axes = plot_groups(
     groups,
     x="disp_nm",
     y="force_uN",
     cmap="viridis",
     alignment={"method": "force_threshold", "force_threshold": 10.0},
+    show_slope=True,
+    xlim=(0.0, 1500.0),
 )
 ```
 
@@ -56,7 +62,8 @@ The public API also exposes:
 - `load_folder(path) -> Study`
 - `Study.group_by_time_gap(...) -> list[ExperimentGroup]`
 - `Study.describe_groups(...) -> list[dict[str, Any]]`
-- `plot_groups(...) -> tuple[Figure, Axes]`
+- `plot_group_timeline(...) -> tuple[Figure, Axes]`
+- `plot_groups(...) -> tuple[Figure, Axes | ndarray]`
 
 Signal processing stays NumPy-first and separate from the data objects:
 `nanodent.savgol`, `nanodent.gradient`, `nanodent.align_curve`, and
