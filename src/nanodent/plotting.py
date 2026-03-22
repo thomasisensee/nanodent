@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, Literal
 
 import matplotlib.dates as mdates
@@ -214,6 +215,99 @@ def plot_group_timeline(
     ax.grid(axis="x", alpha=0.3)
     figure.autofmt_xdate()
     return figure, ax
+
+
+def save_experiment_plots(
+    groups: LineGroups,
+    output_dir: str | Path,
+    *,
+    section: str = "test",
+    x: str = "disp_nm",
+    y: str = "force_uN",
+    alignment: str | Mapping[str, Any] | None = None,
+    smoothing: Mapping[str, Any] | None = None,
+    derivative: bool = False,
+    clip_aligned_negative: bool = True,
+    max_gap: timedelta = timedelta(minutes=30),
+    include_disabled: bool = False,
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] | None = None,
+    image_format: str = "png",
+    dpi: float = 150.0,
+    close: bool = True,
+    **line_kwargs: Any,
+) -> list[Path]:
+    """Save one simple plot per experiment using output names from
+    `.hld` files.
+
+    Args:
+        groups: Study, experiment group, or experiment sequence to plot.
+        output_dir: Directory where individual plot files will be written.
+        section: Section name to read from each experiment.
+        x: Column name to plot on the x-axis.
+        y: Column name to plot on the y-axis before optional derivative
+            processing.
+        alignment: Optional alignment configuration. Pass a method name or a
+            mapping of keyword arguments for `align_curve`.
+        smoothing: Optional keyword arguments for `nanodent.savgol`.
+        derivative: If `True`, save the numerical derivative of `y` with
+            respect to `x` instead of the main signal.
+        clip_aligned_negative: If `True`, hide aligned samples whose shifted
+            x-values are negative.
+        max_gap: Time gap used when `groups` is a `Study`.
+        include_disabled: Whether disabled experiments should be included.
+        xlim: Optional x-axis limits applied to every saved plot.
+        ylim: Optional y-axis limits applied to every saved plot.
+        image_format: File format/extension passed to Matplotlib.
+        dpi: Rasterization density used by `Figure.savefig`.
+        close: Whether to close each figure after saving.
+        **line_kwargs: Additional keyword arguments passed through to
+            `Axes.plot`.
+
+    Returns:
+        Paths to the saved plot files.
+    """
+
+    experiments = _coerce_experiments(
+        groups, max_gap=max_gap, include_disabled=include_disabled
+    )
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+
+    saved_paths: list[Path] = []
+    suffix = f".{image_format.lstrip('.')}"
+    for experiment in experiments:
+        figure, ax = plt.subplots()
+        curve = _prepare_curve(
+            experiment,
+            section=section,
+            x=x,
+            y=y,
+            alignment=alignment,
+            smoothing=smoothing,
+            clip_aligned_negative=clip_aligned_negative,
+        )
+        y_values = curve.main_derivative if derivative else curve.display_y
+        ax.plot(curve.x_values, y_values, **line_kwargs)
+        ax.set_title(experiment.stem)
+        ax.set_xlabel(x)
+        ax.set_ylabel(f"d/d{x} {y}" if derivative else y)
+        if xlim is not None:
+            ax.set_xlim(*xlim)
+        if ylim is not None:
+            ax.set_ylim(*ylim)
+        ax.grid(alpha=0.2)
+        figure.tight_layout()
+
+        output_path = (
+            destination / experiment.paths.hld_path.with_suffix(suffix).name
+        )
+        figure.savefig(output_path, dpi=dpi)
+        saved_paths.append(output_path)
+        if close:
+            plt.close(figure)
+
+    return saved_paths
 
 
 def _plot_groups_overlay(
@@ -516,6 +610,21 @@ def _coerce_groups(
         "plot_groups expects a Study, ExperimentGroup, or a sequence "
         "of those objects."
     )
+
+
+def _coerce_experiments(
+    groups: LineGroups, *, max_gap: timedelta, include_disabled: bool
+) -> list[Experiment]:
+    """Normalize supported plotting inputs into a flat experiment list."""
+
+    resolved_groups = _coerce_groups(
+        groups, max_gap=max_gap, include_disabled=include_disabled
+    )
+    return [
+        experiment
+        for group in resolved_groups
+        for experiment in group.experiments
+    ]
 
 
 def _coerce_timeline_groups(

@@ -134,13 +134,14 @@ def test_load_experiment_reports_file_path_on_parse_error(
 def test_load_folder_discovers_siblings_and_sorts_experiments() -> None:
     study = load_folder(DATA_DIR)
 
-    assert len(study.experiments) == 7
+    assert len(study.experiments) == 8
     assert [experiment.stem for experiment in study.experiments] == [
         "AIrIndent10000nm 02",
         "Tritium_Retention_Study_04.03.2026_0005",
         "Tritium_Retention_Study_04.03.2026_0009",
         "Tritium_Retention_Study_04.03.2026_0000",
         "Tritium_Retention_Study_04.03.2026_0001",
+        "Tritium_Retention_Study_04.03.2026_THU_morning_0001",
         "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0059",
         "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0060",
     ]

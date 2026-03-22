@@ -38,10 +38,15 @@ python -m pytest
 ```python
 from datetime import timedelta
 
-from nanodent import load_folder, plot_group_timeline, plot_groups
+from nanodent import (
+    load_folder,
+    plot_group_timeline,
+    plot_groups,
+    save_experiment_plots,
+)
 
 study = load_folder("path/to/experiment-folder")
-filtered_study = study.classify_delayed_onset()
+filtered_study = study.classify_quality()
 summaries = filtered_study.describe_groups()
 
 timeline_fig, timeline_ax = plot_group_timeline(
@@ -59,11 +64,14 @@ fig, axes = plot_groups(
     show_slope=True,
     xlim=(0.0, 1500.0),
 )
+
+saved = save_experiment_plots(filtered_study, "plots/")
 ```
 
-`Study.classify_delayed_onset()` keeps all experiments loaded but marks
+`Study.classify_quality()` keeps all experiments loaded but marks
 heuristically bad runs as `enabled=False` with a short `disabled_reason`,
-currently including `gradual_onset` and `flat_force`.
+currently including `gradual_onset`, `flat_force`, and local-jump outliers
+such as `outlier_disp` or `outlier_force`.
 Grouping and plotting ignore disabled experiments by default; group summaries
 include them by default so quality decisions stay visible. Pass
 `include_disabled=True` when you want disabled runs included in plots or
@@ -77,6 +85,7 @@ The public API also exposes:
 - `Study.describe_groups(...) -> list[dict[str, Any]]`
 - `plot_group_timeline(...) -> tuple[Figure, Axes]`
 - `plot_groups(...) -> tuple[Figure, Axes | ndarray]`
+- `save_experiment_plots(...) -> list[Path]`
 
 Signal processing stays NumPy-first and separate from the data objects:
 `nanodent.savgol`, `nanodent.gradient`, `nanodent.align_curve`, and

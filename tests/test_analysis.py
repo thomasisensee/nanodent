@@ -6,8 +6,9 @@ from nanodent.analysis.derivative import gradient
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.fit import curve_fit_model
 from nanodent.analysis.quality import (
-    classify_delayed_onset,
     classify_flat_force,
+    classify_gradual_onset,
+    classify_outlier_jumps,
     classify_quality,
 )
 
@@ -74,14 +75,14 @@ def test_curve_fit_model_smoke_test() -> None:
     assert len(result.x_fit) == 200
 
 
-def test_classify_delayed_onset_detects_gradual_rise() -> None:
+def test_classify_gradual_onset_detects_gradual_rise() -> None:
     x = np.linspace(0.0, 100.0, 1201)
     y = np.zeros_like(x)
     ramp_mask = (x >= 20.0) & (x < 90.0)
     y[ramp_mask] = 3000.0 * (x[ramp_mask] - 20.0) / 70.0
     y[x >= 90.0] = 3000.0
 
-    result = classify_delayed_onset(
+    result = classify_gradual_onset(
         x,
         y,
         bin_count=20,
@@ -97,14 +98,14 @@ def test_classify_delayed_onset_detects_gradual_rise() -> None:
     assert result.rise_width_fraction == pytest.approx(0.28, abs=0.06)
 
 
-def test_classify_delayed_onset_keeps_sharp_rise_enabled() -> None:
+def test_classify_gradual_onset_keeps_sharp_rise_enabled() -> None:
     x = np.linspace(0.0, 100.0, 1201)
     y = np.zeros_like(x)
     ramp_mask = (x >= 38.0) & (x < 45.0)
     y[ramp_mask] = 3000.0 * (x[ramp_mask] - 38.0) / 7.0
     y[x >= 45.0] = 3000.0
 
-    result = classify_delayed_onset(
+    result = classify_gradual_onset(
         x,
         y,
         bin_count=20,
@@ -129,6 +130,28 @@ def test_classify_flat_force_detects_plateau_signal() -> None:
     assert result.reason == "flat_force"
 
 
+def test_classify_outlier_jumps_detects_isolated_disp_spike() -> None:
+    x = np.linspace(0.0, 100.0, 1200)
+    y = np.linspace(0.0, 3000.0, 1200)
+    x[600] = 900.0
+
+    result = classify_outlier_jumps(x, y, disp_z_threshold=50.0)
+
+    assert result.enabled is False
+    assert result.reason == "outlier_disp"
+
+
+def test_classify_outlier_jumps_detects_isolated_force_spike() -> None:
+    x = np.linspace(0.0, 100.0, 1200)
+    y = np.linspace(0.0, 3000.0, 1200)
+    y[600] = -800.0
+
+    result = classify_outlier_jumps(x, y, force_z_threshold=50.0)
+
+    assert result.enabled is False
+    assert result.reason == "outlier_force"
+
+
 def test_classify_quality_prioritizes_flat_force_before_onset() -> None:
     x = np.linspace(0.0, 100.0, 1200)
     y = np.full_like(x, 500.0) + 6.0 * np.sin(x / 4.0)
@@ -137,3 +160,17 @@ def test_classify_quality_prioritizes_flat_force_before_onset() -> None:
 
     assert result.enabled is False
     assert result.reason == "flat_force"
+
+
+def test_classify_quality_detects_outlier_before_gradual_onset() -> None:
+    x = np.linspace(0.0, 100.0, 1200)
+    y = np.zeros_like(x)
+    ramp_mask = (x >= 20.0) & (x < 90.0)
+    y[ramp_mask] = 3000.0 * (x[ramp_mask] - 20.0) / 70.0
+    y[x >= 90.0] = 3000.0
+    x[600] = 900.0
+
+    result = classify_quality(x, y, disp_z_threshold=50.0)
+
+    assert result.enabled is False
+    assert result.reason == "outlier_disp"

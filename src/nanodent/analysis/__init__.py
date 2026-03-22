@@ -6,8 +6,9 @@ from nanodent.analysis.filters import savgol
 from nanodent.analysis.fit import FitResult, curve_fit_model
 from nanodent.analysis.quality import (
     QualityCheckResult,
-    classify_delayed_onset,
     classify_flat_force,
+    classify_gradual_onset,
+    classify_outlier_jumps,
     classify_quality,
 )
 
@@ -16,8 +17,9 @@ __all__ = [
     "FitResult",
     "QualityCheckResult",
     "align_curve",
-    "classify_delayed_onset",
+    "classify_gradual_onset",
     "classify_flat_force",
+    "classify_outlier_jumps",
     "classify_quality",
     "curve_fit_model",
     "gradient",

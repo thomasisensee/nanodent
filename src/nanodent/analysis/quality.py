@@ -17,6 +17,49 @@ class QualityCheckResult:
     rise_width_fraction: float | None = None
 
 
+def classify_outlier_jumps(
+    disp_nm: ArrayLike,
+    force_uN: ArrayLike,
+    *,
+    disp_z_threshold: float = 100.0,
+    force_z_threshold: float = 70.0,
+) -> QualityCheckResult:
+    """Classify experiments with isolated local spikes in displacement
+    or force.
+
+    Args:
+        disp_nm: Displacement values from the test section.
+        force_uN: Force values from the test section.
+        disp_z_threshold: Robust z-score threshold for isolated displacement
+            spikes relative to neighboring samples.
+        force_z_threshold: Robust z-score threshold for isolated force spikes
+            relative to neighboring samples.
+
+    Returns:
+        Quality classification result with reason `outlier_disp` or
+        `outlier_force` when an isolated local spike is detected.
+    """
+
+    x = np.asarray(disp_nm, dtype=np.float64)
+    y = np.asarray(force_uN, dtype=np.float64)
+    if x.shape != y.shape:
+        raise ValueError("disp_nm and force_uN must have the same shape.")
+    if x.ndim != 1:
+        raise ValueError("Outlier-jump classification requires 1D signals.")
+    if len(x) < 3:
+        return QualityCheckResult(enabled=True)
+
+    disp_score = _max_local_outlier_score(x)
+    if disp_score >= disp_z_threshold:
+        return QualityCheckResult(enabled=False, reason="outlier_disp")
+
+    force_score = _max_local_outlier_score(y)
+    if force_score >= force_z_threshold:
+        return QualityCheckResult(enabled=False, reason="outlier_force")
+
+    return QualityCheckResult(enabled=True)
+
+
 def classify_flat_force(
     force_uN: ArrayLike,
     *,
@@ -53,7 +96,7 @@ def classify_flat_force(
     )
 
 
-def classify_delayed_onset(
+def classify_gradual_onset(
     disp_nm: ArrayLike,
     force_uN: ArrayLike,
     *,
@@ -96,7 +139,7 @@ def classify_delayed_onset(
     if x.shape != y.shape:
         raise ValueError("disp_nm and force_uN must have the same shape.")
     if x.ndim != 1:
-        raise ValueError("Delayed-onset classification requires 1D signals.")
+        raise ValueError("Gradual-onset classification requires 1D signals.")
     if len(x) == 0:
         return QualityCheckResult(enabled=True)
 
@@ -169,6 +212,8 @@ def classify_quality(
     min_robust_force_span_uN: float = 200.0,
     low_quantile: float = 0.05,
     high_quantile: float = 0.95,
+    disp_z_threshold: float = 100.0,
+    force_z_threshold: float = 70.0,
     bin_count: int = 24,
     baseline_bin_count: int = 4,
     onset_force_fraction: float = 0.05,
@@ -185,7 +230,10 @@ def classify_quality(
             flat-force check.
         low_quantile: Lower quantile used for the robust force span.
         high_quantile: Upper quantile used for the robust force span.
-        bin_count: Number of coarse displacement bins for delayed-onset
+        disp_z_threshold: Robust z-score threshold for isolated displacement
+            spikes.
+        force_z_threshold: Robust z-score threshold for isolated force spikes.
+        bin_count: Number of coarse displacement bins for gradual-onset
             detection.
         baseline_bin_count: Number of early bins used for baseline force.
         onset_force_fraction: Lower force fraction used to define onset.
@@ -210,7 +258,16 @@ def classify_quality(
     if not flat_force_result.enabled:
         return flat_force_result
 
-    return classify_delayed_onset(
+    outlier_result = classify_outlier_jumps(
+        disp_nm,
+        force_uN,
+        disp_z_threshold=disp_z_threshold,
+        force_z_threshold=force_z_threshold,
+    )
+    if not outlier_result.enabled:
+        return outlier_result
+
+    return classify_gradual_onset(
         disp_nm,
         force_uN,
         bin_count=bin_count,
@@ -253,3 +310,19 @@ def _coarse_force_curve(
         np.asarray(binned_disp, dtype=np.float64),
         np.asarray(binned_force, dtype=np.float64),
     )
+
+
+def _max_local_outlier_score(values: np.ndarray) -> float:
+    """Return the strongest local outlier score against neighboring samples."""
+
+    if len(values) < 3:
+        return 0.0
+    residual = values[1:-1] - 0.5 * (values[:-2] + values[2:])
+    median = float(np.median(residual))
+    mad = float(np.median(np.abs(residual - median)))
+    max_deviation = float(np.max(np.abs(residual - median)))
+    if mad <= 0.0:
+        return (
+            0.0 if np.isclose(max_deviation, 0.0, atol=1e-12) else float("inf")
+        )
+    return max_deviation / (1.4826 * mad)

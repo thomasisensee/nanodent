@@ -6,13 +6,19 @@ import pytest
 
 matplotlib.use("Agg")
 
-from nanodent import load_folder, plot_group_timeline, plot_groups
+from nanodent import (
+    load_folder,
+    plot_group_timeline,
+    plot_groups,
+    save_experiment_plots,
+)
 
 DATA_DIR = Path(__file__).parent / "data"
 BAD_STEMS = [
     "AIrIndent10000nm 02",
     "Tritium_Retention_Study_04.03.2026_0005",
     "Tritium_Retention_Study_04.03.2026_0009",
+    "Tritium_Retention_Study_04.03.2026_THU_morning_0001",
 ]
 
 
@@ -146,7 +152,7 @@ def test_plot_groups_can_include_disabled_experiments_when_requested() -> None:
     _, all_axes = plot_groups(study, layout="overlay", include_disabled=True)
 
     assert len(default_axes.lines) == 4
-    assert len(all_axes.lines) == 7
+    assert len(all_axes.lines) == 8
 
 
 def test_plot_group_timeline_can_include_disabled_experiments() -> None:
@@ -157,5 +163,39 @@ def test_plot_group_timeline_can_include_disabled_experiments() -> None:
 
     assert len(default_axes.collections) == 2
     assert len(default_axes.lines) == 2
-    assert len(all_axes.collections) == 4
-    assert len(all_axes.lines) == 4
+    assert len(all_axes.collections) == 5
+    assert len(all_axes.lines) == 5
+
+
+def test_save_experiment_plots_uses_input_filenames_for_outputs(
+    tmp_path: Path,
+) -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+
+    saved_paths = save_experiment_plots(study, tmp_path)
+
+    assert len(saved_paths) == 4
+    assert [path.name for path in saved_paths] == [
+        "Tritium_Retention_Study_04.03.2026_0000.png",
+        "Tritium_Retention_Study_04.03.2026_0001.png",
+        "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0059.png",
+        "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0060.png",
+    ]
+    assert all(path.exists() for path in saved_paths)
+
+
+def test_save_experiment_plots_can_include_disabled_experiments(
+    tmp_path: Path,
+) -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+
+    saved_paths = save_experiment_plots(
+        study, tmp_path, include_disabled=True, image_format="pdf"
+    )
+
+    assert len(saved_paths) == 8
+    assert saved_paths[0].name == "AIrIndent10000nm 02.pdf"
+    assert saved_paths[-1].name == (
+        "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0060.pdf"
+    )
+    assert all(path.exists() for path in saved_paths)

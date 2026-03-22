@@ -8,6 +8,7 @@ DATA_DIR = Path(__file__).parent / "data"
 FLAT_FORCE_STEM = "AIrIndent10000nm 02"
 GRADUAL_ONSET_STEM = "Tritium_Retention_Study_04.03.2026_0009"
 SECOND_GRADUAL_ONSET_STEM = "Tritium_Retention_Study_04.03.2026_0005"
+OUTLIER_STEM = "Tritium_Retention_Study_04.03.2026_THU_morning_0001"
 
 
 def test_group_by_time_gap_creates_two_default_groups() -> None:
@@ -15,7 +16,7 @@ def test_group_by_time_gap_creates_two_default_groups() -> None:
 
     groups = study.group_by_time_gap()
 
-    assert [len(group.experiments) for group in groups] == [1, 2, 2, 2]
+    assert [len(group.experiments) for group in groups] == [1, 2, 2, 1, 2]
     assert groups[0].stems == (FLAT_FORCE_STEM,)
     assert groups[1].stems == (
         "Tritium_Retention_Study_04.03.2026_0005",
@@ -25,6 +26,7 @@ def test_group_by_time_gap_creates_two_default_groups() -> None:
         "Tritium_Retention_Study_04.03.2026_0000",
         "Tritium_Retention_Study_04.03.2026_0001",
     )
+    assert groups[3].stems == (OUTLIER_STEM,)
 
 
 def test_group_by_time_gap_keeps_exact_boundary_in_same_group() -> None:
@@ -78,6 +80,7 @@ def test_describe_groups_returns_group_summaries() -> None:
         1,
         2,
         2,
+        1,
         2,
     ]
     assert summaries[0]["index"] == 0
@@ -92,20 +95,27 @@ def test_describe_groups_returns_group_summaries() -> None:
 
 
 def test_describe_groups_includes_disabled_experiments_by_default() -> None:
-    study = load_folder(DATA_DIR).classify_delayed_onset()
+    study = load_folder(DATA_DIR).classify_quality()
 
     summaries = study.describe_groups()
 
-    assert [summary["disabled_count"] for summary in summaries] == [1, 2, 0, 0]
+    assert [summary["disabled_count"] for summary in summaries] == [
+        1,
+        2,
+        0,
+        1,
+        0,
+    ]
     assert summaries[0]["enabled_count"] == 0
     assert summaries[1]["enabled_count"] == 0
-    assert summaries[3]["enabled_count"] == 2
+    assert summaries[3]["enabled_count"] == 0
+    assert summaries[4]["enabled_count"] == 2
 
 
-def test_classify_delayed_onset_disables_gradual_onset_experiment() -> None:
+def test_classify_quality_disables_gradual_onset_experiment() -> None:
     study = load_folder(DATA_DIR)
 
-    classified = study.classify_delayed_onset()
+    classified = study.classify_quality()
     by_stem = {
         experiment.stem: experiment for experiment in classified.experiments
     }
@@ -119,12 +129,10 @@ def test_classify_delayed_onset_disables_gradual_onset_experiment() -> None:
     )
 
 
-def test_classify_delayed_onset_disables_second_gradual_onset_experiment() -> (
-    None
-):
+def test_classify_quality_disables_second_gradual_onset_experiment() -> None:
     study = load_folder(DATA_DIR)
 
-    classified = study.classify_delayed_onset()
+    classified = study.classify_quality()
     by_stem = {
         experiment.stem: experiment for experiment in classified.experiments
     }
@@ -135,10 +143,10 @@ def test_classify_delayed_onset_disables_second_gradual_onset_experiment() -> (
     )
 
 
-def test_classify_delayed_onset_keeps_late_but_steep_run_enabled() -> None:
+def test_classify_quality_keeps_late_but_steep_run_enabled() -> None:
     study = load_folder(DATA_DIR)
 
-    classified = study.classify_delayed_onset()
+    classified = study.classify_quality()
     by_stem = {
         experiment.stem: experiment for experiment in classified.experiments
     }
@@ -157,10 +165,10 @@ def test_classify_delayed_onset_keeps_late_but_steep_run_enabled() -> None:
     )
 
 
-def test_classify_delayed_onset_disables_flat_force_experiment() -> None:
+def test_classify_quality_disables_flat_force_experiment() -> None:
     study = load_folder(DATA_DIR)
 
-    classified = study.classify_delayed_onset()
+    classified = study.classify_quality()
     by_stem = {
         experiment.stem: experiment for experiment in classified.experiments
     }
@@ -169,12 +177,25 @@ def test_classify_delayed_onset_disables_flat_force_experiment() -> None:
     assert by_stem[FLAT_FORCE_STEM].disabled_reason == "flat_force"
 
 
+def test_classify_quality_disables_outlier_experiment() -> None:
+    study = load_folder(DATA_DIR)
+
+    classified = study.classify_quality()
+    by_stem = {
+        experiment.stem: experiment for experiment in classified.experiments
+    }
+
+    assert by_stem[OUTLIER_STEM].enabled is False
+    assert by_stem[OUTLIER_STEM].disabled_reason == "outlier_disp"
+
+
 def test_disabled_experiments_are_ignored_by_default_grouping() -> None:
     study = load_folder(DATA_DIR).disable_experiments(
         [
             FLAT_FORCE_STEM,
             "Tritium_Retention_Study_04.03.2026_0005",
             GRADUAL_ONSET_STEM,
+            OUTLIER_STEM,
         ]
     )
 
@@ -185,7 +206,7 @@ def test_disabled_experiments_are_ignored_by_default_grouping() -> None:
     assert [
         len(group.experiments)
         for group in study.group_by_time_gap(include_disabled=True)
-    ] == [1, 2, 2, 2]
+    ] == [1, 2, 2, 1, 2]
 
 
 def test_manual_enable_and_disable_return_new_studies() -> None:

@@ -1,6 +1,7 @@
 """Public package exports for nanodent."""
 
 from importlib import metadata
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nanodent.analysis.align import AlignmentResult, align_curve
@@ -9,8 +10,9 @@ from nanodent.analysis.filters import savgol
 from nanodent.analysis.fit import FitResult, curve_fit_model
 from nanodent.analysis.quality import (
     QualityCheckResult,
-    classify_delayed_onset,
     classify_flat_force,
+    classify_gradual_onset,
+    classify_outlier_jumps,
     classify_quality,
 )
 from nanodent.io import load_experiment, load_folder
@@ -47,8 +49,9 @@ __all__ = [
     "Study",
     "__version__",
     "align_curve",
-    "classify_delayed_onset",
+    "classify_gradual_onset",
     "classify_flat_force",
+    "classify_outlier_jumps",
     "classify_quality",
     "curve_fit_model",
     "gradient",
@@ -57,6 +60,7 @@ __all__ = [
     "plot_group_timeline",
     "plot_groups",
     "savgol",
+    "save_experiment_plots",
 ]
 
 
@@ -92,3 +96,21 @@ def plot_group_timeline(*args: Any, **kwargs: Any) -> tuple["Figure", "Axes"]:
     from nanodent.plotting import plot_group_timeline as _plot_group_timeline
 
     return _plot_group_timeline(*args, **kwargs)
+
+
+def save_experiment_plots(*args: Any, **kwargs: Any) -> list["Path"]:
+    """Lazily import and save one plot file per experiment.
+
+    Args:
+        *args: Positional args forwarded to
+            `nanodent.plotting.save_experiment_plots`.
+        **kwargs: Keyword args forwarded to
+            `nanodent.plotting.save_experiment_plots`.
+
+    Returns:
+        Paths to the saved plot files.
+    """
+
+    from nanodent.plotting import save_experiment_plots as _save_plots
+
+    return _save_plots(*args, **kwargs)

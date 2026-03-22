@@ -202,12 +202,14 @@ class Study:
             )
         ]
 
-    def classify_delayed_onset(
+    def classify_quality(
         self,
         *,
         min_robust_force_span_uN: float = 200.0,
         low_quantile: float = 0.05,
         high_quantile: float = 0.95,
+        disp_z_threshold: float = 100.0,
+        force_z_threshold: float = 70.0,
         bin_count: int = 24,
         baseline_bin_count: int = 4,
         onset_force_fraction: float = 0.05,
@@ -222,6 +224,10 @@ class Study:
                 the flat-force check.
             low_quantile: Lower quantile used for the flat-force span.
             high_quantile: Upper quantile used for the flat-force span.
+            disp_z_threshold: Robust z-score threshold for isolated
+                displacement spikes.
+            force_z_threshold: Robust z-score threshold for isolated force
+                spikes.
             bin_count: Number of coarse displacement bins for onset-shape
                 detection.
             baseline_bin_count: Number of early bins used for baseline force.
@@ -247,6 +253,8 @@ class Study:
                 min_robust_force_span_uN=min_robust_force_span_uN,
                 low_quantile=low_quantile,
                 high_quantile=high_quantile,
+                disp_z_threshold=disp_z_threshold,
+                force_z_threshold=force_z_threshold,
                 bin_count=bin_count,
                 baseline_bin_count=baseline_bin_count,
                 onset_force_fraction=onset_force_fraction,
