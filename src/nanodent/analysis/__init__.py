@@ -8,6 +8,7 @@ from nanodent.analysis.quality import (
     QualityCheckResult,
     classify_flat_force,
     classify_gradual_onset,
+    classify_high_displacement,
     classify_outlier_jumps,
     classify_quality,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "QualityCheckResult",
     "align_curve",
     "classify_gradual_onset",
+    "classify_high_displacement",
     "classify_flat_force",
     "classify_outlier_jumps",
     "classify_quality",

@@ -8,6 +8,7 @@ from nanodent.analysis.fit import curve_fit_model
 from nanodent.analysis.quality import (
     classify_flat_force,
     classify_gradual_onset,
+    classify_high_displacement,
     classify_outlier_jumps,
     classify_quality,
 )
@@ -152,6 +153,15 @@ def test_classify_outlier_jumps_detects_isolated_force_spike() -> None:
     assert result.reason == "outlier_force"
 
 
+def test_classify_high_displacement_disables_curve_above_limit() -> None:
+    x = np.linspace(0.0, 1200.0, 1200)
+
+    result = classify_high_displacement(x, max_disp_nm=1000.0)
+
+    assert result.enabled is False
+    assert result.reason == "high_disp"
+
+
 def test_classify_quality_prioritizes_flat_force_before_onset() -> None:
     x = np.linspace(0.0, 100.0, 1200)
     y = np.full_like(x, 500.0) + 6.0 * np.sin(x / 4.0)
@@ -174,3 +184,13 @@ def test_classify_quality_detects_outlier_before_gradual_onset() -> None:
 
     assert result.enabled is False
     assert result.reason == "outlier_disp"
+
+
+def test_classify_quality_disables_high_displacement_before_onset() -> None:
+    x = np.linspace(0.0, 1200.0, 1200)
+    y = 2.5 * x
+
+    result = classify_quality(x, y, max_disp_nm=1000.0)
+
+    assert result.enabled is False
+    assert result.reason == "high_disp"

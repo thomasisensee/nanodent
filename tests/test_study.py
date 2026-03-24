@@ -104,12 +104,12 @@ def test_describe_groups_includes_disabled_experiments_by_default() -> None:
         2,
         0,
         1,
-        0,
+        1,
     ]
     assert summaries[0]["enabled_count"] == 0
     assert summaries[1]["enabled_count"] == 0
     assert summaries[3]["enabled_count"] == 0
-    assert summaries[4]["enabled_count"] == 2
+    assert summaries[4]["enabled_count"] == 1
 
 
 def test_classify_quality_disables_gradual_onset_experiment() -> None:
@@ -143,7 +143,7 @@ def test_classify_quality_disables_second_gradual_onset_experiment() -> None:
     )
 
 
-def test_classify_quality_keeps_late_but_steep_run_enabled() -> None:
+def test_classify_quality_disables_late_high_displacement_run() -> None:
     study = load_folder(DATA_DIR)
 
     classified = study.classify_quality()
@@ -155,13 +155,13 @@ def test_classify_quality_keeps_late_but_steep_run_enabled() -> None:
         by_stem[
             "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0059"
         ].enabled
-        is True
+        is False
     )
     assert (
         by_stem[
             "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0059"
         ].disabled_reason
-        is None
+        == "high_disp"
     )
 
 

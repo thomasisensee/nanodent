@@ -17,6 +17,37 @@ class QualityCheckResult:
     rise_width_fraction: float | None = None
 
 
+def classify_high_displacement(
+    disp_nm: ArrayLike,
+    *,
+    max_disp_nm: float = 1000.0,
+) -> QualityCheckResult:
+    """Classify runs whose test displacement exceeds a hard limit.
+
+    Args:
+        disp_nm: Displacement values from the test section.
+        max_disp_nm: Maximum allowed displacement in nanometers.
+
+    Returns:
+        Quality classification result. Curves that exceed the displacement
+        limit are marked with reason `high_disp`.
+    """
+
+    x = np.asarray(disp_nm, dtype=np.float64)
+    if x.ndim != 1:
+        raise ValueError(
+            "High-displacement classification requires a 1D signal."
+        )
+    if len(x) == 0:
+        return QualityCheckResult(enabled=True)
+
+    enabled = bool(np.max(x) <= max_disp_nm)
+    return QualityCheckResult(
+        enabled=enabled,
+        reason=None if enabled else "high_disp",
+    )
+
+
 def classify_outlier_jumps(
     disp_nm: ArrayLike,
     force_uN: ArrayLike,
@@ -210,8 +241,9 @@ def classify_quality(
     force_uN: ArrayLike,
     *,
     min_robust_force_span_uN: float = 200.0,
-    low_quantile: float = 0.05,
-    high_quantile: float = 0.95,
+    low_quantile: float = 0.40,
+    high_quantile: float = 0.999,
+    max_disp_nm: float = 1000.0,
     disp_z_threshold: float = 100.0,
     force_z_threshold: float = 70.0,
     bin_count: int = 24,
@@ -230,6 +262,8 @@ def classify_quality(
             flat-force check.
         low_quantile: Lower quantile used for the robust force span.
         high_quantile: Upper quantile used for the robust force span.
+        max_disp_nm: Maximum allowed displacement before disabling the
+            experiment.
         disp_z_threshold: Robust z-score threshold for isolated displacement
             spikes.
         force_z_threshold: Robust z-score threshold for isolated force spikes.
@@ -266,6 +300,12 @@ def classify_quality(
     )
     if not outlier_result.enabled:
         return outlier_result
+
+    high_disp_result = classify_high_displacement(
+        disp_nm, max_disp_nm=max_disp_nm
+    )
+    if not high_disp_result.enabled:
+        return high_disp_result
 
     return classify_gradual_onset(
         disp_nm,

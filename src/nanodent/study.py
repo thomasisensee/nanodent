@@ -206,8 +206,9 @@ class Study:
         self,
         *,
         min_robust_force_span_uN: float = 200.0,
-        low_quantile: float = 0.15,
+        low_quantile: float = 0.40,
         high_quantile: float = 0.999,
+        max_disp_nm: float = 1000.0,
         disp_z_threshold: float = 100.0,
         force_z_threshold: float = 70.0,
         bin_count: int = 24,
@@ -224,6 +225,8 @@ class Study:
                 the flat-force check.
             low_quantile: Lower quantile used for the flat-force span.
             high_quantile: Upper quantile used for the flat-force span.
+            max_disp_nm: Maximum allowed displacement before disabling the
+                experiment.
             disp_z_threshold: Robust z-score threshold for isolated
                 displacement spikes.
             force_z_threshold: Robust z-score threshold for isolated force
@@ -253,6 +256,7 @@ class Study:
                 min_robust_force_span_uN=min_robust_force_span_uN,
                 low_quantile=low_quantile,
                 high_quantile=high_quantile,
+                max_disp_nm=max_disp_nm,
                 disp_z_threshold=disp_z_threshold,
                 force_z_threshold=force_z_threshold,
                 bin_count=bin_count,
