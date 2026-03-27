@@ -2,6 +2,8 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from nanodent import load_folder
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -275,3 +277,41 @@ def test_manual_enable_and_disable_return_new_studies() -> None:
     assert disabled.experiments[0].disabled_reason == "manual"
     assert restored.experiments[0].enabled is True
     assert restored.experiments[0].disabled_reason is None
+
+
+def test_analyze_oliver_pharr_skips_disabled_experiments_by_default() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(FLAT_FORCE_STEM)
+
+    result = study.analyze_oliver_pharr()
+
+    assert len(result) == len(study) - 1
+    with pytest.raises(KeyError, match=FLAT_FORCE_STEM):
+        result.by_stem(FLAT_FORCE_STEM)
+
+
+def test_analyze_oliver_pharr_can_include_disabled_experiments() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(FLAT_FORCE_STEM)
+
+    result = study.analyze_oliver_pharr(include_disabled=True)
+
+    assert len(result) == len(study)
+    assert result.by_stem(FLAT_FORCE_STEM).stem == FLAT_FORCE_STEM
+
+
+def test_analyze_oliver_pharr_summary_returns_query_rows() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(FLAT_FORCE_STEM)
+
+    result = study.analyze_oliver_pharr()
+    first_row = result.summary()[0]
+
+    assert set(first_row) == {
+        "stem",
+        "success",
+        "reason",
+        "peak_force_uN",
+        "peak_disp_nm",
+        "stiffness_uN_per_nm",
+        "force_intercept_uN",
+        "depth_intercept_nm",
+        "r_squared",
+    }

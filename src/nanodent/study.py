@@ -2,8 +2,14 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
+from nanodent.analysis.oliver_pharr import (
+    OliverPharrBatchResult,
+)
+from nanodent.analysis.oliver_pharr import (
+    analyze_oliver_pharr as _analyze_oliver_pharr,
+)
 from nanodent.analysis.quality import classify_quality as _classify_quality
 from nanodent.models import Experiment
 
@@ -286,6 +292,52 @@ class Study:
                 experiment.with_enabled(result.enabled, reason=result.reason)
             )
         return Study(experiments=tuple(classified))
+
+    def analyze_oliver_pharr(
+        self,
+        *,
+        unloading_fraction: float = 0.2,
+        smoothing: Mapping[str, Any] | None = None,
+        fit_num_points: int = 2,
+        include_disabled: bool = False,
+    ) -> OliverPharrBatchResult:
+        """Analyze selected experiments with a straight-line unloading fit.
+
+        Args:
+            unloading_fraction: Fraction of the post-peak unloading branch used
+                for the fit.
+            smoothing: Optional keyword args forwarded to `nanodent.savgol`
+                and applied equally to displacement and force.
+            fit_num_points: Number of points used for dense fitted-line
+                coordinates.
+            include_disabled: Whether disabled experiments should be analyzed
+                alongside enabled ones.
+
+        Returns:
+            Immutable batch result with one per-experiment Oliver-Pharr fit
+            result for every selected experiment.
+        """
+
+        results = tuple(
+            _analyze_oliver_pharr(
+                experiment.section("test")["disp_nm"],
+                experiment.section("test")["force_uN"],
+                unloading_fraction=unloading_fraction,
+                smoothing=smoothing,
+                fit_num_points=fit_num_points,
+                stem=experiment.stem,
+            )
+            for experiment in self._selected_experiments(
+                include_disabled=include_disabled
+            )
+        )
+        return OliverPharrBatchResult(
+            study=self,
+            results=results,
+            unloading_fraction=unloading_fraction,
+            smoothing=None if smoothing is None else dict(smoothing),
+            fit_num_points=fit_num_points,
+        )
 
     def set_enabled(
         self,

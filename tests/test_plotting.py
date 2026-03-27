@@ -5,9 +5,11 @@ import numpy as np
 import pytest
 
 matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from nanodent import (
     load_folder,
+    plot_force_displacement,
     plot_group_timeline,
     plot_groups,
     save_experiment_plots,
@@ -70,6 +72,85 @@ def test_plot_groups_overlay_restarts_colormap_for_each_group() -> None:
 
     assert axes.lines[0].get_color() == axes.lines[2].get_color()
     assert axes.lines[1].get_color() == axes.lines[3].get_color()
+
+
+def test_plot_force_displacement_returns_passed_axes_for_one_exp() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+    experiment = next(
+        exp
+        for exp in study.experiments
+        if exp.stem == "Tritium_Retention_Study_04.03.2026_0000"
+    )
+    _, ax = plt.subplots()
+
+    returned_ax = plot_force_displacement(experiment, ax=ax)
+
+    assert returned_ax is ax
+    assert len(ax.lines) == 1
+    assert ax.get_title() == experiment.stem
+    assert ax.get_xlabel() == "disp_nm"
+    assert ax.get_ylabel() == "force_uN"
+
+
+def test_plot_force_displacement_can_overlay_group_on_one_axes() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+    group = study.group_by_time_gap()[0]
+
+    ax = plot_force_displacement(group, cmap="plasma")
+
+    assert len(ax.lines) == 2
+    assert ax.get_title() == "Group 0 (2 experiments)"
+    assert ax.get_legend() is not None
+
+
+def test_plot_force_displacement_can_overlay_oliver_pharr_fit() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+    experiment = next(
+        exp
+        for exp in study.experiments
+        if exp.stem == "Tritium_Retention_Study_04.03.2026_0000"
+    )
+    batch = study.analyze_oliver_pharr()
+
+    ax = plot_force_displacement(experiment, oliver_pharr=batch)
+
+    assert len(ax.lines) == 2
+    assert ax.lines[1].get_color() == "black"
+    assert ax.lines[1].get_linestyle() == "--"
+    assert ax.lines[1].get_linewidth() == 2.5
+    assert ax.lines[1].get_label() == f"{experiment.stem} fit"
+
+
+def test_plot_force_displacement_skips_missing_oliver_pharr_fit() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+    experiment = next(
+        exp for exp in study.experiments if exp.stem == "AIrIndent10000nm 02"
+    )
+    batch = study.analyze_oliver_pharr()
+
+    ax = plot_force_displacement(experiment, oliver_pharr=batch)
+
+    assert len(ax.lines) == 1
+
+
+def test_plot_force_displacement_allows_fit_style_overrides() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+    experiment = next(
+        exp
+        for exp in study.experiments
+        if exp.stem == "Tritium_Retention_Study_04.03.2026_0000"
+    )
+    batch = study.analyze_oliver_pharr()
+
+    ax = plot_force_displacement(
+        experiment,
+        oliver_pharr=batch,
+        fit_kwargs={"color": "red", "linewidth": 4.0, "linestyle": ":"},
+    )
+
+    assert ax.lines[1].get_color() == "red"
+    assert ax.lines[1].get_linewidth() == 4.0
+    assert ax.lines[1].get_linestyle() == ":"
 
 
 def test_plot_groups_can_show_separate_slope_panels() -> None:

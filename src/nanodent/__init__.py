@@ -8,6 +8,11 @@ from nanodent.analysis.align import AlignmentResult, align_curve
 from nanodent.analysis.derivative import gradient
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.fit import FitResult, curve_fit_model
+from nanodent.analysis.oliver_pharr import (
+    OliverPharrBatchResult,
+    OliverPharrExperimentResult,
+    analyze_oliver_pharr,
+)
 from nanodent.analysis.quality import (
     QualityCheckResult,
     classify_flat_force,
@@ -44,6 +49,8 @@ __all__ = [
     "ExperimentGroup",
     "ExperimentPaths",
     "FitResult",
+    "OliverPharrBatchResult",
+    "OliverPharrExperimentResult",
     "QualityCheckResult",
     "MetadataEntry",
     "SegmentDefinition",
@@ -51,6 +58,7 @@ __all__ = [
     "Study",
     "__version__",
     "align_curve",
+    "analyze_oliver_pharr",
     "classify_gradual_onset",
     "classify_high_displacement",
     "classify_flat_force",
@@ -61,6 +69,7 @@ __all__ = [
     "gradient",
     "load_experiment",
     "load_folder",
+    "plot_force_displacement",
     "plot_group_timeline",
     "plot_groups",
     "savgol",
@@ -100,6 +109,26 @@ def plot_group_timeline(*args: Any, **kwargs: Any) -> tuple["Figure", "Axes"]:
     from nanodent.plotting import plot_group_timeline as _plot_group_timeline
 
     return _plot_group_timeline(*args, **kwargs)
+
+
+def plot_force_displacement(*args: Any, **kwargs: Any) -> "Axes":
+    """Lazily import the single-axes force-displacement plotting helper.
+
+    Args:
+        *args: Positional args forwarded to
+            `nanodent.plotting.plot_force_displacement`.
+        **kwargs: Keyword args forwarded to
+            `nanodent.plotting.plot_force_displacement`.
+
+    Returns:
+        Axes containing the plotted force-displacement curves.
+    """
+
+    from nanodent.plotting import (
+        plot_force_displacement as _plot_force_displacement,
+    )
+
+    return _plot_force_displacement(*args, **kwargs)
 
 
 def save_experiment_plots(*args: Any, **kwargs: Any) -> list["Path"]:

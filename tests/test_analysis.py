@@ -5,6 +5,7 @@ from nanodent.analysis.align import align_curve
 from nanodent.analysis.derivative import gradient
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.fit import curve_fit_model
+from nanodent.analysis.oliver_pharr import analyze_oliver_pharr
 from nanodent.analysis.quality import (
     classify_flat_force,
     classify_gradual_onset,
@@ -13,6 +14,29 @@ from nanodent.analysis.quality import (
     classify_peak_balance,
     classify_quality,
 )
+
+
+def _make_linear_unloading_curve() -> tuple[np.ndarray, np.ndarray]:
+    load_disp = np.linspace(0.0, 100.0, 101)
+    load_force = 0.01 * load_disp**2
+    unload_disp = np.linspace(100.0, 80.0, 41)[1:]
+    unload_force = 5.0 * unload_disp - 400.0
+    return (
+        np.concatenate([load_disp, unload_disp]),
+        np.concatenate([load_force, unload_force]),
+    )
+
+
+def _make_spiky_peak_curve() -> tuple[np.ndarray, np.ndarray]:
+    load_disp = np.linspace(0.0, 100.0, 101)
+    load_force = 0.5 * load_disp
+    unload_disp = np.linspace(100.0, 60.0, 41)[1:]
+    unload_force = 1.25 * unload_disp - 75.0
+    disp = np.concatenate([load_disp, unload_disp])
+    force = np.concatenate([load_force, unload_force])
+    disp[70] += 4.0
+    force[70] += 25.0
+    return disp, force
 
 
 def test_savgol_preserves_shape_and_reduces_noise() -> None:
@@ -75,6 +99,107 @@ def test_curve_fit_model_smoke_test() -> None:
     assert result.parameters[0] == pytest.approx(2.0, rel=1e-3)
     assert result.parameters[1] == pytest.approx(1.5, rel=1e-3)
     assert len(result.x_fit) == 200
+
+
+def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
+    x, y = _make_linear_unloading_curve()
+
+    result = analyze_oliver_pharr(x, y, unloading_fraction=0.25)
+
+    assert result.success is True
+    assert result.reason is None
+    assert result.used_smoothing is False
+    assert result.peak_index == 100
+    assert result.peak_force_uN == pytest.approx(100.0)
+    assert result.peak_disp_nm == pytest.approx(100.0)
+    assert result.unloading_start_index == 100
+    assert result.unloading_end_index == 110
+    assert result.fit_point_count == 11
+    assert result.stiffness_uN_per_nm == pytest.approx(5.0, rel=1e-4)
+    assert result.force_intercept_uN == pytest.approx(-400.0, rel=1e-4)
+    assert result.depth_intercept_nm == pytest.approx(80.0, rel=1e-4)
+    assert result.r_squared == pytest.approx(1.0, abs=1e-6)
+    assert len(result.x_fit) == 200
+    assert len(result.y_fit) == 200
+
+
+def test_analyze_oliver_pharr_uses_smoothed_signals_for_peak_detection() -> (
+    None
+):
+    x, y = _make_spiky_peak_curve()
+
+    raw_result = analyze_oliver_pharr(x, y, unloading_fraction=0.25)
+    smoothed_result = analyze_oliver_pharr(
+        x,
+        y,
+        unloading_fraction=0.25,
+        smoothing={"window_length": 21, "polyorder": 2},
+    )
+
+    assert raw_result.peak_index == 70
+    assert smoothed_result.success is True
+    assert smoothed_result.used_smoothing is True
+    assert dict(smoothed_result.smoothing or {}) == {
+        "window_length": 21,
+        "polyorder": 2,
+    }
+    assert smoothed_result.peak_index == pytest.approx(100, abs=2)
+
+
+def test_analyze_oliver_pharr_rejects_invalid_unloading_fraction() -> None:
+    x, y = _make_linear_unloading_curve()
+
+    with pytest.raises(ValueError, match="unloading_fraction"):
+        analyze_oliver_pharr(x, y, unloading_fraction=0.0)
+
+    with pytest.raises(ValueError, match="unloading_fraction"):
+        analyze_oliver_pharr(x, y, unloading_fraction=1.1)
+
+
+def test_analyze_oliver_pharr_marks_missing_unloading_branch() -> None:
+    x = np.array([0.0, 1.0, 2.0], dtype=np.float64)
+    y = np.array([0.0, 1.0, 2.0], dtype=np.float64)
+
+    result = analyze_oliver_pharr(x, y)
+
+    assert result.success is False
+    assert result.reason == "no_unloading_branch"
+
+
+def test_analyze_oliver_pharr_marks_too_few_unloading_points() -> None:
+    x = np.array([0.0, 1.0, 2.0, 1.5, 1.0], dtype=np.float64)
+    y = np.array([0.0, 1.0, 2.0, 1.0, 0.0], dtype=np.float64)
+
+    result = analyze_oliver_pharr(x, y, unloading_fraction=1.0)
+
+    assert result.success is False
+    assert result.reason == "too_few_unloading_points"
+
+
+def test_analyze_oliver_pharr_marks_zero_stiffness() -> None:
+    x = np.array([0.0, 1.0, 2.0, 1.9, 1.8, 1.7, 1.6], dtype=np.float64)
+    y = np.array([0.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0], dtype=np.float64)
+
+    result = analyze_oliver_pharr(x, y, unloading_fraction=1.0)
+
+    assert result.success is False
+    assert result.reason == "zero_stiffness"
+
+
+def test_analyze_oliver_pharr_marks_non_finite_window_as_fit_failure() -> None:
+    x = np.array(
+        [0.0, 1.0, 2.0, 1.9, 1.8, 1.7, 1.6, 1.5, 1.4],
+        dtype=np.float64,
+    )
+    y = np.array(
+        [0.0, 1.0, 5.0, 4.0, np.nan, 2.0, 1.0, 0.5, 0.0],
+        dtype=np.float64,
+    )
+
+    result = analyze_oliver_pharr(x, y, unloading_fraction=1.0)
+
+    assert result.success is False
+    assert result.reason == "fit_failed"
 
 
 def test_classify_gradual_onset_detects_gradual_rise() -> None:

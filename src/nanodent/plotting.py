@@ -15,12 +15,14 @@ from numpy.typing import NDArray
 from nanodent.analysis.align import align_curve
 from nanodent.analysis.derivative import gradient
 from nanodent.analysis.filters import savgol
+from nanodent.analysis.oliver_pharr import OliverPharrBatchResult
 from nanodent.models import Experiment
 from nanodent.study import ExperimentGroup, Study
 
 LineGroups = (
     Study | ExperimentGroup | Sequence[ExperimentGroup] | Sequence[Experiment]
 )
+CurveSelection = Experiment | ExperimentGroup | Sequence[Experiment]
 AxesGrid = Axes | NDArray[np.object_]
 
 
@@ -215,6 +217,75 @@ def plot_group_timeline(
     ax.grid(axis="x", alpha=0.3)
     figure.autofmt_xdate()
     return figure, ax
+
+
+def plot_force_displacement(
+    target: CurveSelection,
+    *,
+    oliver_pharr: OliverPharrBatchResult | None = None,
+    smoothing: Mapping[str, Any] | None = None,
+    cmap: str = "viridis",
+    ax: Axes | None = None,
+    fit_kwargs: Mapping[str, Any] | None = None,
+    **line_kwargs: Any,
+) -> Axes:
+    """Plot force versus displacement for explicit experiment selections.
+
+    Args:
+        target: Experiment, experiment group, or explicit experiment sequence
+            to overlay on one axes.
+        oliver_pharr: Optional batch result used to overlay successful fitted
+            unloading lines by matching experiment stems.
+        smoothing: Optional keyword arguments for `nanodent.savgol`. When
+            provided, the same filter is applied to displacement and force
+            before plotting.
+        ax: Existing axes to draw on. A new axes is created when omitted.
+        fit_kwargs: Optional keyword arguments applied only to Oliver-Pharr fit
+            overlays. These override the default dashed-line styling.
+        **line_kwargs: Additional keyword arguments passed through to
+            `Axes.plot` for the experiment curves.
+
+    Returns:
+        Axes containing the plotted force-displacement curves.
+    """
+
+    experiments, _ = _coerce_curve_selection(target)
+    if ax is None:
+        _, ax = plt.subplots()
+
+    if not experiments:
+        return ax
+
+    fit_lookup = _oliver_pharr_lookup(oliver_pharr)
+    for _, experiment in enumerate(experiments):
+        curve = _prepare_force_displacement_curve(
+            experiment, smoothing=smoothing
+        )
+        ax.plot(
+            curve.x_values,
+            curve.y_values,
+            label=experiment.stem,
+            **line_kwargs,
+        )
+
+        fit_result = fit_lookup.get(experiment.stem)
+        if fit_result is None or not fit_result.success:
+            continue
+        if len(fit_result.x_fit) == 0 or len(fit_result.y_fit) == 0:
+            continue
+        overlay_kwargs = {
+            "alpha": 0.95,
+            "color": "black",
+            "label": f"{experiment.stem} fit",
+            "linestyle": "--",
+            "linewidth": 2.5,
+            "zorder": 4,
+        }
+        if fit_kwargs is not None:
+            overlay_kwargs.update(dict(fit_kwargs))
+        ax.plot(fit_result.x_fit, fit_result.y_fit, **overlay_kwargs)
+
+    return ax
 
 
 def save_experiment_plots(
@@ -487,6 +558,19 @@ class _PreparedCurve:
         self.slope_y = slope_y
 
 
+class _ForceDisplacementCurve:
+    """Prepared force-displacement arrays for one experiment."""
+
+    def __init__(
+        self,
+        *,
+        x_values: NDArray[np.float64],
+        y_values: NDArray[np.float64],
+    ) -> None:
+        self.x_values = x_values
+        self.y_values = y_values
+
+
 def _prepare_curve(
     experiment: Experiment,
     *,
@@ -529,6 +613,23 @@ def _prepare_curve(
         main_derivative=main_derivative,
         slope_y=slope_y,
     )
+
+
+def _prepare_force_displacement_curve(
+    experiment: Experiment,
+    *,
+    smoothing: Mapping[str, Any] | None,
+) -> _ForceDisplacementCurve:
+    """Return explicit force-displacement arrays for one experiment."""
+
+    table = experiment.section("test")
+    x_values = np.asarray(table["disp_nm"], dtype=np.float64)
+    y_values = np.asarray(table["force_uN"], dtype=np.float64)
+    if smoothing is not None:
+        smoothing_kwargs = dict(smoothing)
+        x_values = savgol(x_values, **smoothing_kwargs)
+        y_values = savgol(y_values, **smoothing_kwargs)
+    return _ForceDisplacementCurve(x_values=x_values, y_values=y_values)
 
 
 def _decorate_group_axes(
@@ -610,6 +711,40 @@ def _coerce_groups(
         "plot_groups expects a Study, ExperimentGroup, or a sequence "
         "of those objects."
     )
+
+
+def _coerce_curve_selection(
+    target: CurveSelection,
+) -> tuple[tuple[Experiment, ...], str]:
+    """Normalize explicit curve selections into experiments and a title."""
+
+    if isinstance(target, Experiment):
+        return (target,), target.stem
+    if isinstance(target, ExperimentGroup):
+        return (
+            target.experiments,
+            f"Group {target.index} ({len(target.experiments)} experiments)",
+        )
+    experiments = tuple(target)
+    if not experiments:
+        return (), "Force vs. Displacement"
+    first_item = experiments[0]
+    if not isinstance(first_item, Experiment):
+        raise TypeError(
+            "plot_force_displacement expects an Experiment, "
+            "ExperimentGroup, or a sequence of Experiment objects."
+        )
+    return experiments, "Force vs. Displacement"
+
+
+def _oliver_pharr_lookup(
+    oliver_pharr: OliverPharrBatchResult | None,
+) -> dict[str, Any]:
+    """Return per-stem Oliver-Pharr results for plotting overlays."""
+
+    if oliver_pharr is None:
+        return {}
+    return {result.stem: result for result in oliver_pharr.results}
 
 
 def _coerce_experiments(

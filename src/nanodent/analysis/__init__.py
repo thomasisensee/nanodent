@@ -4,6 +4,11 @@ from nanodent.analysis.align import AlignmentResult, align_curve
 from nanodent.analysis.derivative import gradient
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.fit import FitResult, curve_fit_model
+from nanodent.analysis.oliver_pharr import (
+    OliverPharrBatchResult,
+    OliverPharrExperimentResult,
+    analyze_oliver_pharr,
+)
 from nanodent.analysis.quality import (
     QualityCheckResult,
     classify_flat_force,
@@ -17,8 +22,11 @@ from nanodent.analysis.quality import (
 __all__ = [
     "AlignmentResult",
     "FitResult",
+    "OliverPharrBatchResult",
+    "OliverPharrExperimentResult",
     "QualityCheckResult",
     "align_curve",
+    "analyze_oliver_pharr",
     "classify_gradual_onset",
     "classify_high_displacement",
     "classify_flat_force",
