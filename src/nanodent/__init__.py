@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nanodent.analysis.filters import savgol
-from nanodent.analysis.fit import FitResult, curve_fit_model
 from nanodent.analysis.oliver_pharr import (
     OliverPharrBatchResult,
     OliverPharrExperimentResult,
@@ -45,7 +44,6 @@ __all__ = [
     "Experiment",
     "ExperimentGroup",
     "ExperimentPaths",
-    "FitResult",
     "OliverPharrBatchResult",
     "OliverPharrExperimentResult",
     "QualityCheckResult",
@@ -61,8 +59,6 @@ __all__ = [
     "classify_peak_balance",
     "classify_outlier_jumps",
     "classify_quality",
-    "curve_fit_model",
-    "gradient",
     "load_experiment",
     "load_folder",
     "plot_force_displacement",

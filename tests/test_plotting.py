@@ -1,8 +1,6 @@
 from pathlib import Path
 
 import matplotlib
-import numpy as np
-import pytest
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -153,53 +151,6 @@ def test_plot_force_displacement_allows_fit_style_overrides() -> None:
     assert ax.lines[1].get_linestyle() == ":"
 
 
-def test_plot_groups_can_show_separate_slope_panels() -> None:
-    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
-    groups = study.group_by_time_gap()
-
-    figure, axes = plot_groups(
-        groups[:1],
-        smoothing={"window_length": 21, "polyorder": 2},
-        show_slope=True,
-        xlim=(0.0, 1500.0),
-        ylim=(0.0, 1200.0),
-        slope_ylim=(-20.0, 50.0),
-    )
-
-    assert figure is axes[0, 0].figure
-    assert axes.shape == (1, 2)
-    assert axes[0, 0].get_ylabel() == "force_uN"
-    assert axes[0, 1].get_ylabel() == "d/ddisp_nm force_uN"
-    assert axes[0, 0].get_xlim() == (0.0, 1500.0)
-    assert axes[0, 1].get_ylim() == (-20.0, 50.0)
-    assert len(axes[0, 1].lines) == 2
-
-
-def test_plot_groups_alignment_clips_negative_shifted_x_by_default() -> None:
-    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
-    groups = study.group_by_time_gap()
-
-    _, axes = plot_groups(
-        groups[:1],
-        alignment={"method": "force_threshold", "force_threshold": 10.0},
-    )
-
-    assert all(np.min(line.get_xdata()) >= 0.0 for line in axes[0, 0].lines)
-
-
-def test_plot_groups_can_keep_negative_shifted_x_when_requested() -> None:
-    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
-    groups = study.group_by_time_gap()
-
-    _, axes = plot_groups(
-        groups[:1],
-        alignment={"method": "force_threshold", "force_threshold": 10.0},
-        clip_aligned_negative=False,
-    )
-
-    assert any(np.min(line.get_xdata()) < 0.0 for line in axes[0, 0].lines)
-
-
 def test_plot_group_timeline_supports_study_and_explicit_groups() -> None:
     study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
     groups = study.group_by_time_gap()
@@ -215,15 +166,6 @@ def test_plot_group_timeline_supports_study_and_explicit_groups() -> None:
         "Group 0 (2 exp)",
         "Group 1 (2 exp)",
     ]
-
-
-def test_plot_groups_rejects_slope_panels_in_overlay_mode() -> None:
-    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
-
-    with pytest.raises(ValueError, match="layout='grid'"):
-        plot_groups(
-            study.group_by_time_gap(), layout="overlay", show_slope=True
-        )
 
 
 def test_plot_groups_can_include_disabled_experiments_when_requested() -> None:

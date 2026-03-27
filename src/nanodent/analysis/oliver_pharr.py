@@ -1,7 +1,5 @@
 """Oliver-Pharr-style unloading analysis helpers."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -9,9 +7,9 @@ from typing import TYPE_CHECKING, Any, Iterator
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from scipy.optimize import curve_fit
 
 from nanodent.analysis.filters import savgol
-from nanodent.analysis.fit import curve_fit_model
 
 if TYPE_CHECKING:
     from nanodent.study import Study
@@ -68,7 +66,7 @@ class OliverPharrExperimentResult:
 class OliverPharrBatchResult:
     """Immutable batch container for per-experiment Oliver-Pharr results."""
 
-    study: Study
+    study: "Study"
     results: tuple[OliverPharrExperimentResult, ...]
     unloading_fraction: float
     smoothing: FrozenMapping = None
@@ -110,7 +108,7 @@ def analyze_oliver_pharr(
     *,
     unloading_fraction: float = 0.2,
     smoothing: Mapping[str, Any] | None = None,
-    fit_num_points: int = 2,
+    fit_num_points: int = 200,
     stem: str = "",
 ) -> OliverPharrExperimentResult:
     """Fit a straight line to the early unloading branch of one test curve.
@@ -209,12 +207,14 @@ def analyze_oliver_pharr(
             smoothing=frozen_smoothing,
         )
 
+    initial_slope = _estimate_slope(fit_disp, fit_force)
+    initial_intercept = float(fit_force[0] - initial_slope * fit_disp[0])
     try:
-        fit_result = curve_fit_model(
+        parameters, _ = curve_fit(
+            _linear_model,
             fit_disp,
             fit_force,
-            _linear_model,
-            num_points=fit_num_points,
+            p0=(initial_slope, initial_intercept),
         )
     except (RuntimeError, ValueError):
         return _failed_result(
@@ -230,8 +230,8 @@ def analyze_oliver_pharr(
             smoothing=frozen_smoothing,
         )
 
-    slope = float(fit_result.parameters[0])
-    intercept = float(fit_result.parameters[1])
+    slope = float(parameters[0])
+    intercept = float(parameters[1])
     if not np.isfinite([slope, intercept]).all():
         return _failed_result(
             stem=stem,
@@ -276,6 +276,15 @@ def analyze_oliver_pharr(
 
     fitted_window = _linear_model(fit_disp, slope, intercept)
     r_squared = _r_squared(fit_force, fitted_window)
+    x_fit = np.linspace(
+        float(np.min(fit_disp)),
+        float(np.max(fit_disp)),
+        fit_num_points,
+        dtype=np.float64,
+    )
+    y_fit = np.asarray(
+        _linear_model(x_fit, slope, intercept), dtype=np.float64
+    )
     return OliverPharrExperimentResult(
         stem=stem,
         success=True,
@@ -292,8 +301,8 @@ def analyze_oliver_pharr(
         force_intercept_uN=intercept,
         depth_intercept_nm=depth_intercept,
         r_squared=r_squared,
-        x_fit=np.asarray(fit_result.x_fit, dtype=np.float64),
-        y_fit=np.asarray(fit_result.y_fit, dtype=np.float64),
+        x_fit=x_fit,
+        y_fit=y_fit,
     )
 
 
@@ -349,6 +358,15 @@ def _linear_model(
     """Return a straight-line model."""
 
     return slope * x_values + intercept
+
+
+def _estimate_slope(x_values: FloatArray, y_values: FloatArray) -> float:
+    """Estimate an initial slope from the endpoints of one fit window."""
+
+    delta_x = float(x_values[-1] - x_values[0])
+    if np.isclose(delta_x, 0.0, atol=1e-12):
+        return 0.0
+    return float((y_values[-1] - y_values[0]) / delta_x)
 
 
 def _r_squared(observed: FloatArray, predicted: FloatArray) -> float:

@@ -33,12 +33,10 @@ def plot_groups(
     cmap: str = "viridis",
     smoothing: Mapping[str, Any] | None = None,
     layout: Literal["grid", "overlay"] = "grid",
-    show_slope: bool = False,
     max_gap: timedelta = timedelta(minutes=30),
     include_disabled: bool = False,
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] | None = None,
-    slope_ylim: tuple[float, float] | None = None,
     sharex: bool = True,
     ax: Axes | None = None,
     **line_kwargs: Any,
@@ -54,14 +52,11 @@ def plot_groups(
         smoothing: Optional keyword arguments for `nanodent.savgol`.
         layout: Plot layout. `grid` creates one panel per group, while
             `overlay` combines all groups on one axes.
-        show_slope: If `True` in grid mode, add a second subplot row per group
-            showing slopes separately from the main curve panel.
         max_gap: Time gap used when `groups` is a `Study`.
         include_disabled: Whether disabled experiments should remain visible in
             the plotted groups.
         xlim: Optional x-axis limits applied to every subplot.
         ylim: Optional y-axis limits applied to the main curve panels.
-        slope_ylim: Optional y-axis limits applied to slope panels.
         sharex: Whether grid subplots should share an x-axis.
         ax: Existing axes used only in `overlay` mode.
         **line_kwargs: Additional keyword arguments passed through to
@@ -78,10 +73,6 @@ def plot_groups(
     if layout == "grid" and ax is not None:
         raise ValueError(
             "The 'ax' parameter is only supported when layout='overlay'."
-        )
-    if layout == "overlay" and show_slope:
-        raise ValueError(
-            "Separate slope panels are only supported when layout='grid'."
         )
     if layout == "overlay":
         return _plot_groups_overlay(
@@ -103,10 +94,8 @@ def plot_groups(
         y=y,
         cmap=cmap,
         smoothing=smoothing,
-        show_slope=show_slope,
         xlim=xlim,
         ylim=ylim,
-        slope_ylim=slope_ylim,
         sharex=sharex,
         **line_kwargs,
     )
@@ -206,7 +195,6 @@ def plot_force_displacement(
     *,
     oliver_pharr: OliverPharrBatchResult | None = None,
     smoothing: Mapping[str, Any] | None = None,
-    cmap: str = "viridis",
     ax: Axes | None = None,
     fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
@@ -231,15 +219,19 @@ def plot_force_displacement(
         Axes containing the plotted force-displacement curves.
     """
 
-    experiments, _ = _coerce_curve_selection(target)
+    experiments, default_title = _coerce_curve_selection(target)
     if ax is None:
         _, ax = plt.subplots()
 
     if not experiments:
+        ax.set_title(default_title)
+        ax.set_xlabel("disp_nm")
+        ax.set_ylabel("force_uN")
+        ax.grid(alpha=0.2)
         return ax
 
     fit_lookup = _oliver_pharr_lookup(oliver_pharr)
-    for _, experiment in enumerate(experiments):
+    for experiment in experiments:
         curve = _prepare_force_displacement_curve(
             experiment, smoothing=smoothing
         )
@@ -267,6 +259,12 @@ def plot_force_displacement(
             overlay_kwargs.update(dict(fit_kwargs))
         ax.plot(fit_result.x_fit, fit_result.y_fit, **overlay_kwargs)
 
+    ax.set_title(default_title)
+    ax.set_xlabel("disp_nm")
+    ax.set_ylabel("force_uN")
+    ax.grid(alpha=0.2)
+    if len(experiments) > 1:
+        ax.legend()
     return ax
 
 
@@ -332,6 +330,7 @@ def save_experiment_plots(
         ax.plot(curve.x_values, y_values, **line_kwargs)
         ax.set_title(experiment.stem)
         ax.set_xlabel(x)
+        ax.set_ylabel(y)
         if xlim is not None:
             ax.set_xlim(*xlim)
         if ylim is not None:
@@ -379,10 +378,9 @@ def _plot_groups_overlay(
                 y=y,
                 smoothing=smoothing,
             )
-            y_values = curve.display_y
             ax.plot(
                 curve.x_values,
-                y_values,
+                curve.display_y,
                 color=color_map(color_index),
                 label=experiment.stem,
                 **line_kwargs,
@@ -406,30 +404,18 @@ def _plot_groups_grid(
     y: str,
     cmap: str,
     smoothing: Mapping[str, Any] | None,
-    show_slope: bool,
     xlim: tuple[float, float] | None,
     ylim: tuple[float, float] | None,
-    slope_ylim: tuple[float, float] | None,
     sharex: bool,
     **line_kwargs: Any,
 ) -> tuple[Figure, NDArray[np.object_]]:
     group_count = max(len(groups), 1)
-    total_rows = group_count * (2 if show_slope else 1)
     figure, axes = plt.subplots(
-        total_rows,
+        group_count,
         1,
         squeeze=False,
         sharex=sharex,
-        figsize=(9, max(3.5, group_count * (5.4 if show_slope else 3.6))),
-        gridspec_kw=(
-            {
-                "height_ratios": [
-                    ratio for _ in range(group_count) for ratio in (1.0, 0.7)
-                ]
-            }
-            if show_slope
-            else None
-        ),
+        figsize=(9, max(3.5, group_count * 3.6)),
     )
 
     if not groups:
@@ -440,8 +426,7 @@ def _plot_groups_grid(
         return figure, axes
 
     for row_index, group in enumerate(groups):
-        main_ax = axes[row_index * (2 if show_slope else 1), 0]
-        slope_ax = axes[row_index * 2 + 1, 0] if show_slope else None
+        main_ax = axes[row_index, 0]
         color_map = plt.get_cmap(cmap, max(len(group.experiments), 1))
 
         for color_index, experiment in enumerate(group.experiments):
@@ -453,22 +438,13 @@ def _plot_groups_grid(
                 smoothing=smoothing,
             )
             color = color_map(color_index)
-            main_y = curve.display_y
             main_ax.plot(
                 curve.x_values,
-                main_y,
+                curve.display_y,
                 color=color,
                 label=experiment.stem,
                 **line_kwargs,
             )
-            if slope_ax is not None:
-                slope_ax.plot(
-                    curve.x_values,
-                    curve.slope_y,
-                    color=color,
-                    label=experiment.stem,
-                    **line_kwargs,
-                )
 
         _decorate_group_axes(
             main_ax,
@@ -479,23 +455,8 @@ def _plot_groups_grid(
             ylim=ylim,
             show_legend=False,
         )
-        if slope_ax is not None:
-            slope_ax.set_title(f"Group {group.index} slope")
-            slope_ax.set_xlabel(x)
-            slope_ax.set_ylabel(f"d/d{x} {y}")
-            if xlim is not None:
-                slope_ax.set_xlim(*xlim)
-            if slope_ylim is not None:
-                slope_ax.set_ylim(*slope_ylim)
-            slope_ax.grid(alpha=0.2)
 
     figure.tight_layout()
-    if show_slope:
-        grouped_axes = np.empty((len(groups), 2), dtype=object)
-        for row_index in range(len(groups)):
-            grouped_axes[row_index, 0] = axes[row_index * 2, 0]
-            grouped_axes[row_index, 1] = axes[row_index * 2 + 1, 0]
-        return figure, grouped_axes
     return figure, axes[: len(groups), :]
 
 
@@ -577,6 +538,7 @@ def _decorate_group_axes(
 ) -> None:
     ax.set_title(f"Group {group.index} ({len(group.experiments)} experiments)")
     ax.set_xlabel(x)
+    ax.set_ylabel(y)
     if xlim is not None:
         ax.set_xlim(*xlim)
     if ylim is not None:

@@ -308,10 +308,12 @@ def test_analyze_oliver_pharr_summary_returns_query_rows() -> None:
         "stem",
         "success",
         "reason",
+        "peak_index",
         "peak_force_uN",
         "peak_disp_nm",
         "stiffness_uN_per_nm",
         "force_intercept_uN",
         "depth_intercept_nm",
         "r_squared",
+        "fit_point_count",
     }
