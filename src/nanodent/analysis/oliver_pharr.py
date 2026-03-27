@@ -109,6 +109,7 @@ def analyze_oliver_pharr(
     unloading_fraction: float = 0.2,
     smoothing: Mapping[str, Any] | None = None,
     fit_num_points: int = 200,
+    use_force_peak: bool = True,
     stem: str = "",
 ) -> OliverPharrExperimentResult:
     """Fit a straight line to the early unloading branch of one test curve.
@@ -154,40 +155,31 @@ def analyze_oliver_pharr(
         active_disp = savgol(disp_array, **smoothing_kwargs)
         active_force = savgol(force_array, **smoothing_kwargs)
 
-    peak_index = int(np.argmax(active_force))
-    peak_force = float(active_force[peak_index])
-    peak_disp = float(active_disp[peak_index])
-    if peak_index >= len(active_force) - 1:
-        return _failed_result(
-            stem=stem,
-            reason="no_unloading_branch",
-            peak_index=peak_index,
-            peak_force_uN=peak_force,
-            peak_disp_nm=peak_disp,
-            unloading_start_index=peak_index,
-            unloading_end_index=peak_index,
-            used_smoothing=frozen_smoothing is not None,
-            smoothing=frozen_smoothing,
-        )
+    peak_force_index = int(np.argmax(active_force))
+    peak_disp_index = int(np.argmax(active_disp))
 
-    unloading_length = len(active_force) - peak_index
+    peak = peak_force_index if use_force_peak else peak_disp_index
+    peak_force = float(active_force[peak])
+    peak_disp = float(active_disp[peak])
+
+    unloading_length = len(active_force) - peak
     fit_point_count = max(
         int(np.ceil(unloading_length * unloading_fraction)), 1
     )
     unloading_end_index = min(
-        peak_index + fit_point_count - 1,
+        peak + fit_point_count - 1,
         len(active_force) - 1,
     )
-    fit_disp = active_disp[peak_index : unloading_end_index + 1]
-    fit_force = active_force[peak_index : unloading_end_index + 1]
+    fit_disp = active_disp[peak : unloading_end_index + 1]
+    fit_force = active_force[peak : unloading_end_index + 1]
     if len(fit_disp) < 5:
         return _failed_result(
             stem=stem,
             reason="too_few_unloading_points",
-            peak_index=peak_index,
+            peak_index=peak,
             peak_force_uN=peak_force,
             peak_disp_nm=peak_disp,
-            unloading_start_index=peak_index,
+            unloading_start_index=peak,
             unloading_end_index=unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=frozen_smoothing is not None,
@@ -197,10 +189,10 @@ def analyze_oliver_pharr(
         return _failed_result(
             stem=stem,
             reason="fit_failed",
-            peak_index=peak_index,
+            peak_index=peak,
             peak_force_uN=peak_force,
             peak_disp_nm=peak_disp,
-            unloading_start_index=peak_index,
+            unloading_start_index=peak,
             unloading_end_index=unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=frozen_smoothing is not None,
@@ -220,10 +212,10 @@ def analyze_oliver_pharr(
         return _failed_result(
             stem=stem,
             reason="fit_failed",
-            peak_index=peak_index,
+            peak_index=peak,
             peak_force_uN=peak_force,
             peak_disp_nm=peak_disp,
-            unloading_start_index=peak_index,
+            unloading_start_index=peak,
             unloading_end_index=unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=frozen_smoothing is not None,
@@ -236,10 +228,10 @@ def analyze_oliver_pharr(
         return _failed_result(
             stem=stem,
             reason="fit_failed",
-            peak_index=peak_index,
+            peak_index=peak,
             peak_force_uN=peak_force,
             peak_disp_nm=peak_disp,
-            unloading_start_index=peak_index,
+            unloading_start_index=peak,
             unloading_end_index=unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=frozen_smoothing is not None,
@@ -249,10 +241,10 @@ def analyze_oliver_pharr(
         return _failed_result(
             stem=stem,
             reason="zero_stiffness",
-            peak_index=peak_index,
+            peak_index=peak,
             peak_force_uN=peak_force,
             peak_disp_nm=peak_disp,
-            unloading_start_index=peak_index,
+            unloading_start_index=peak,
             unloading_end_index=unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=frozen_smoothing is not None,
@@ -264,10 +256,10 @@ def analyze_oliver_pharr(
         return _failed_result(
             stem=stem,
             reason="fit_failed",
-            peak_index=peak_index,
+            peak_index=peak,
             peak_force_uN=peak_force,
             peak_disp_nm=peak_disp,
-            unloading_start_index=peak_index,
+            unloading_start_index=peak,
             unloading_end_index=unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=frozen_smoothing is not None,
@@ -276,6 +268,7 @@ def analyze_oliver_pharr(
 
     fitted_window = _linear_model(fit_disp, slope, intercept)
     r_squared = _r_squared(fit_force, fitted_window)
+
     x_fit = np.linspace(
         float(np.min(fit_disp)),
         float(np.max(fit_disp)),
@@ -289,10 +282,10 @@ def analyze_oliver_pharr(
         stem=stem,
         success=True,
         reason=None,
-        peak_index=peak_index,
+        peak_index=peak,
         peak_force_uN=peak_force,
         peak_disp_nm=peak_disp,
-        unloading_start_index=peak_index,
+        unloading_start_index=peak,
         unloading_end_index=unloading_end_index,
         fit_point_count=len(fit_disp),
         used_smoothing=frozen_smoothing is not None,

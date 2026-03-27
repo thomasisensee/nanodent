@@ -299,6 +299,7 @@ class Study:
         unloading_fraction: float = 0.2,
         smoothing: Mapping[str, Any] | None = None,
         fit_num_points: int = 2,
+        use_force_peak: bool = True,
         include_disabled: bool = False,
     ) -> OliverPharrBatchResult:
         """Analyze selected experiments with a straight-line unloading fit.
@@ -325,6 +326,7 @@ class Study:
                 unloading_fraction=unloading_fraction,
                 smoothing=smoothing,
                 fit_num_points=fit_num_points,
+                use_force_peak=use_force_peak,
                 stem=experiment.stem,
             )
             for experiment in self._selected_experiments(
