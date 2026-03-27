@@ -108,6 +108,7 @@ def test_describe_groups_includes_disabled_experiments_by_default() -> None:
     ]
     assert summaries[0]["enabled_count"] == 0
     assert summaries[1]["enabled_count"] == 0
+    assert summaries[2]["enabled_count"] == 2
     assert summaries[3]["enabled_count"] == 0
     assert summaries[4]["enabled_count"] == 1
 
@@ -187,6 +188,60 @@ def test_classify_quality_disables_outlier_experiment() -> None:
 
     assert by_stem[OUTLIER_STEM].enabled is False
     assert by_stem[OUTLIER_STEM].disabled_reason == "outlier_disp"
+
+
+def test_classify_quality_keeps_single_peak_experiments_enabled() -> None:
+    study = load_folder(DATA_DIR)
+
+    classified = study.classify_quality()
+    by_stem = {
+        experiment.stem: experiment for experiment in classified.experiments
+    }
+
+    assert by_stem["Tritium_Retention_Study_04.03.2026_0001"].enabled is True
+    assert (
+        by_stem["Tritium_Retention_Study_04.03.2026_0001"].disabled_reason
+        is None
+    )
+    assert (
+        by_stem[
+            "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0060"
+        ].enabled
+        is True
+    )
+    assert (
+        by_stem[
+            "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0060"
+        ].disabled_reason
+        is None
+    )
+
+
+def test_classify_quality_can_require_two_peaks() -> None:
+    study = load_folder(DATA_DIR)
+
+    classified = study.classify_quality(require_two_peaks=True)
+    by_stem = {
+        experiment.stem: experiment for experiment in classified.experiments
+    }
+
+    assert by_stem["Tritium_Retention_Study_04.03.2026_0001"].enabled is False
+    assert (
+        by_stem["Tritium_Retention_Study_04.03.2026_0001"].disabled_reason
+        == "weak_second_peak"
+    )
+    assert (
+        by_stem[
+            "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0060"
+        ].enabled
+        is False
+    )
+    assert (
+        by_stem[
+            "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0060"
+        ].disabled_reason
+        == "weak_second_peak"
+    )
 
 
 def test_disabled_experiments_are_ignored_by_default_grouping() -> None:

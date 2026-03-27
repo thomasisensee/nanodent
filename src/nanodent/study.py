@@ -209,6 +209,10 @@ class Study:
         low_quantile: float = 0.40,
         high_quantile: float = 0.999,
         max_disp_nm: float = 1000.0,
+        peak_bin_count: int = 48,
+        peak_prominence_fraction: float = 0.05,
+        min_secondary_peak_fraction: float = 0.1,
+        require_two_peaks: bool = False,
         disp_z_threshold: float = 100.0,
         force_z_threshold: float = 70.0,
         bin_count: int = 24,
@@ -227,6 +231,14 @@ class Study:
             high_quantile: Upper quantile used for the flat-force span.
             max_disp_nm: Maximum allowed displacement before disabling the
                 experiment.
+            peak_bin_count: Number of coarse displacement bins used for the
+                peak-balance heuristic.
+            peak_prominence_fraction: Minimum prominence used to resolve
+                peaks, relative to the coarse-force dynamic range.
+            min_secondary_peak_fraction: Minimum allowed ratio between the
+                second-highest and highest resolved peaks.
+            require_two_peaks: When true, disable curves that do not resolve
+                at least two peaks after smoothing.
             disp_z_threshold: Robust z-score threshold for isolated
                 displacement spikes.
             force_z_threshold: Robust z-score threshold for isolated force
@@ -257,6 +269,10 @@ class Study:
                 low_quantile=low_quantile,
                 high_quantile=high_quantile,
                 max_disp_nm=max_disp_nm,
+                peak_bin_count=peak_bin_count,
+                peak_prominence_fraction=peak_prominence_fraction,
+                min_secondary_peak_fraction=min_secondary_peak_fraction,
+                require_two_peaks=require_two_peaks,
                 disp_z_threshold=disp_z_threshold,
                 force_z_threshold=force_z_threshold,
                 bin_count=bin_count,

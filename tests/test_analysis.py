@@ -10,6 +10,7 @@ from nanodent.analysis.quality import (
     classify_gradual_onset,
     classify_high_displacement,
     classify_outlier_jumps,
+    classify_peak_balance,
     classify_quality,
 )
 
@@ -162,6 +163,53 @@ def test_classify_high_displacement_disables_curve_above_limit() -> None:
     assert result.reason == "high_disp"
 
 
+def test_classify_peak_balance_keeps_two_established_peaks_enabled() -> None:
+    x = np.linspace(0.0, 100.0, 1200)
+    y = 2500.0 * np.exp(-(((x - 30.0) / 8.0) ** 2))
+    y += 1200.0 * np.exp(-(((x - 70.0) / 10.0) ** 2))
+
+    result = classify_peak_balance(x, y, min_secondary_peak_fraction=0.3)
+
+    assert result.enabled is True
+    assert result.reason is None
+
+
+def test_classify_peak_balance_disables_too_small_second_peak() -> None:
+    x = np.linspace(0.0, 100.0, 1200)
+    y = 2500.0 * np.exp(-(((x - 30.0) / 8.0) ** 2))
+    y += 500.0 * np.exp(-(((x - 70.0) / 10.0) ** 2))
+
+    result = classify_peak_balance(x, y, min_secondary_peak_fraction=0.3)
+
+    assert result.enabled is False
+    assert result.reason == "weak_second_peak"
+
+
+def test_classify_peak_balance_abstains_without_two_resolved_peaks() -> None:
+    x = np.linspace(0.0, 100.0, 1200)
+    y = 2500.0 * np.exp(-(((x - 30.0) / 8.0) ** 2))
+
+    result = classify_peak_balance(x, y, min_secondary_peak_fraction=0.3)
+
+    assert result.enabled is True
+    assert result.reason is None
+
+
+def test_classify_peak_balance_can_require_two_resolved_peaks() -> None:
+    x = np.linspace(0.0, 100.0, 1200)
+    y = 2500.0 * np.exp(-(((x - 30.0) / 8.0) ** 2))
+
+    result = classify_peak_balance(
+        x,
+        y,
+        min_secondary_peak_fraction=0.3,
+        require_two_peaks=True,
+    )
+
+    assert result.enabled is False
+    assert result.reason == "weak_second_peak"
+
+
 def test_classify_quality_prioritizes_flat_force_before_onset() -> None:
     x = np.linspace(0.0, 100.0, 1200)
     y = np.full_like(x, 500.0) + 6.0 * np.sin(x / 4.0)
@@ -194,3 +242,47 @@ def test_classify_quality_disables_high_displacement_before_onset() -> None:
 
     assert result.enabled is False
     assert result.reason == "high_disp"
+
+
+def test_classify_quality_disables_weak_second_peak_before_onset() -> None:
+    x = np.linspace(0.0, 100.0, 1200)
+    y = 2500.0 * np.exp(-(((x - 30.0) / 8.0) ** 2))
+    y += 500.0 * np.exp(-(((x - 70.0) / 10.0) ** 2))
+
+    result = classify_quality(x, y, min_secondary_peak_fraction=0.3)
+
+    assert result.enabled is False
+    assert result.reason == "weak_second_peak"
+
+
+def test_classify_quality_abstains_on_single_peak_by_default() -> None:
+    x = np.linspace(0.0, 100.0, 1200)
+    y = 2500.0 * np.exp(-(((x - 30.0) / 8.0) ** 2))
+
+    result = classify_quality(
+        x,
+        y,
+        min_secondary_peak_fraction=0.3,
+        force_z_threshold=float("inf"),
+        max_rise_width_fraction=1.0,
+    )
+
+    assert result.enabled is True
+    assert result.reason is None
+
+
+def test_classify_quality_can_require_two_peaks() -> None:
+    x = np.linspace(0.0, 100.0, 1200)
+    y = 2500.0 * np.exp(-(((x - 30.0) / 8.0) ** 2))
+
+    result = classify_quality(
+        x,
+        y,
+        min_secondary_peak_fraction=0.3,
+        require_two_peaks=True,
+        force_z_threshold=float("inf"),
+        max_rise_width_fraction=1.0,
+    )
+
+    assert result.enabled is False
+    assert result.reason == "weak_second_peak"

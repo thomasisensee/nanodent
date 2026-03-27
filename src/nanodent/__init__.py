@@ -14,6 +14,7 @@ from nanodent.analysis.quality import (
     classify_gradual_onset,
     classify_high_displacement,
     classify_outlier_jumps,
+    classify_peak_balance,
     classify_quality,
 )
 from nanodent.io import load_experiment, load_folder
@@ -53,6 +54,7 @@ __all__ = [
     "classify_gradual_onset",
     "classify_high_displacement",
     "classify_flat_force",
+    "classify_peak_balance",
     "classify_outlier_jumps",
     "classify_quality",
     "curve_fit_model",
