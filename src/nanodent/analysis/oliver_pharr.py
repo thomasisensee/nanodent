@@ -53,12 +53,14 @@ class OliverPharrExperimentResult:
             "stem": self.stem,
             "success": self.success,
             "reason": self.reason,
+            "peak_index": self.peak_index,
             "peak_force_uN": self.peak_force_uN,
             "peak_disp_nm": self.peak_disp_nm,
             "stiffness_uN_per_nm": self.stiffness_uN_per_nm,
             "force_intercept_uN": self.force_intercept_uN,
             "depth_intercept_nm": self.depth_intercept_nm,
             "r_squared": self.r_squared,
+            "fit_point_count": self.fit_point_count,
         }
 
 
@@ -207,14 +209,11 @@ def analyze_oliver_pharr(
             smoothing=frozen_smoothing,
         )
 
-    initial_slope = _initial_slope(fit_disp, fit_force)
-    initial_intercept = float(fit_force[0] - initial_slope * fit_disp[0])
     try:
         fit_result = curve_fit_model(
             fit_disp,
             fit_force,
             _linear_model,
-            p0=[initial_slope, initial_intercept],
             num_points=fit_num_points,
         )
     except (RuntimeError, ValueError):
@@ -350,15 +349,6 @@ def _linear_model(
     """Return a straight-line model."""
 
     return slope * x_values + intercept
-
-
-def _initial_slope(x_values: FloatArray, y_values: FloatArray) -> float:
-    """Estimate an initial straight-line slope from the fit window ends."""
-
-    delta_x = float(x_values[-1] - x_values[0])
-    if np.isclose(delta_x, 0.0, atol=1e-12):
-        return 0.0
-    return float((y_values[-1] - y_values[0]) / delta_x)
 
 
 def _r_squared(observed: FloatArray, predicted: FloatArray) -> float:

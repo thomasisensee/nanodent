@@ -12,8 +12,6 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from numpy.typing import NDArray
 
-from nanodent.analysis.align import align_curve
-from nanodent.analysis.derivative import gradient
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.oliver_pharr import OliverPharrBatchResult
 from nanodent.models import Experiment
@@ -33,12 +31,9 @@ def plot_groups(
     x: str = "disp_nm",
     y: str = "force_uN",
     cmap: str = "viridis",
-    alignment: str | Mapping[str, Any] | None = None,
     smoothing: Mapping[str, Any] | None = None,
-    derivative: bool = False,
     layout: Literal["grid", "overlay"] = "grid",
     show_slope: bool = False,
-    clip_aligned_negative: bool = True,
     max_gap: timedelta = timedelta(minutes=30),
     include_disabled: bool = False,
     xlim: tuple[float, float] | None = None,
@@ -54,20 +49,13 @@ def plot_groups(
         groups: Study, experiment group, or experiment sequence to plot.
         section: Section name to read from each experiment.
         x: Column name to plot on the x-axis.
-        y: Column name to plot on the y-axis before optional derivative
-            processing.
+        y: Column name to plot on the y-axis.
         cmap: Matplotlib colormap name used to color the curves.
-        alignment: Optional alignment configuration. Pass a method name or a
-            mapping of keyword arguments for `align_curve`.
         smoothing: Optional keyword arguments for `nanodent.savgol`.
-        derivative: If `True`, the main curve panel shows the numerical
-            derivative of the chosen signal with respect to `x`.
         layout: Plot layout. `grid` creates one panel per group, while
             `overlay` combines all groups on one axes.
         show_slope: If `True` in grid mode, add a second subplot row per group
             showing slopes separately from the main curve panel.
-        clip_aligned_negative: If `True`, hide aligned samples whose shifted
-            x-values are negative.
         max_gap: Time gap used when `groups` is a `Study`.
         include_disabled: Whether disabled experiments should remain visible in
             the plotted groups.
@@ -102,10 +90,7 @@ def plot_groups(
             x=x,
             y=y,
             cmap=cmap,
-            alignment=alignment,
             smoothing=smoothing,
-            derivative=derivative,
-            clip_aligned_negative=clip_aligned_negative,
             xlim=xlim,
             ylim=ylim,
             ax=ax,
@@ -117,11 +102,8 @@ def plot_groups(
         x=x,
         y=y,
         cmap=cmap,
-        alignment=alignment,
         smoothing=smoothing,
-        derivative=derivative,
         show_slope=show_slope,
-        clip_aligned_negative=clip_aligned_negative,
         xlim=xlim,
         ylim=ylim,
         slope_ylim=slope_ylim,
@@ -295,10 +277,7 @@ def save_experiment_plots(
     section: str = "test",
     x: str = "disp_nm",
     y: str = "force_uN",
-    alignment: str | Mapping[str, Any] | None = None,
     smoothing: Mapping[str, Any] | None = None,
-    derivative: bool = False,
-    clip_aligned_negative: bool = True,
     max_gap: timedelta = timedelta(minutes=30),
     include_disabled: bool = False,
     xlim: tuple[float, float] | None = None,
@@ -316,15 +295,8 @@ def save_experiment_plots(
         output_dir: Directory where individual plot files will be written.
         section: Section name to read from each experiment.
         x: Column name to plot on the x-axis.
-        y: Column name to plot on the y-axis before optional derivative
-            processing.
-        alignment: Optional alignment configuration. Pass a method name or a
-            mapping of keyword arguments for `align_curve`.
+        y: Column name to plot on the y-axis.
         smoothing: Optional keyword arguments for `nanodent.savgol`.
-        derivative: If `True`, save the numerical derivative of `y` with
-            respect to `x` instead of the main signal.
-        clip_aligned_negative: If `True`, hide aligned samples whose shifted
-            x-values are negative.
         max_gap: Time gap used when `groups` is a `Study`.
         include_disabled: Whether disabled experiments should be included.
         xlim: Optional x-axis limits applied to every saved plot.
@@ -354,15 +326,12 @@ def save_experiment_plots(
             section=section,
             x=x,
             y=y,
-            alignment=alignment,
             smoothing=smoothing,
-            clip_aligned_negative=clip_aligned_negative,
         )
-        y_values = curve.main_derivative if derivative else curve.display_y
+        y_values = curve.display_y
         ax.plot(curve.x_values, y_values, **line_kwargs)
         ax.set_title(experiment.stem)
         ax.set_xlabel(x)
-        ax.set_ylabel(f"d/d{x} {y}" if derivative else y)
         if xlim is not None:
             ax.set_xlim(*xlim)
         if ylim is not None:
@@ -388,10 +357,7 @@ def _plot_groups_overlay(
     x: str,
     y: str,
     cmap: str,
-    alignment: str | Mapping[str, Any] | None,
     smoothing: Mapping[str, Any] | None,
-    derivative: bool,
-    clip_aligned_negative: bool,
     xlim: tuple[float, float] | None,
     ylim: tuple[float, float] | None,
     ax: Axes | None,
@@ -411,11 +377,9 @@ def _plot_groups_overlay(
                 section=section,
                 x=x,
                 y=y,
-                alignment=alignment,
                 smoothing=smoothing,
-                clip_aligned_negative=clip_aligned_negative,
             )
-            y_values = curve.main_derivative if derivative else curve.display_y
+            y_values = curve.display_y
             ax.plot(
                 curve.x_values,
                 y_values,
@@ -425,7 +389,7 @@ def _plot_groups_overlay(
             )
 
     ax.set_xlabel(x)
-    ax.set_ylabel(f"d/d{x} {y}" if derivative else y)
+    ax.set_ylabel(y)
     if xlim is not None:
         ax.set_xlim(*xlim)
     if ylim is not None:
@@ -441,11 +405,8 @@ def _plot_groups_grid(
     x: str,
     y: str,
     cmap: str,
-    alignment: str | Mapping[str, Any] | None,
     smoothing: Mapping[str, Any] | None,
-    derivative: bool,
     show_slope: bool,
-    clip_aligned_negative: bool,
     xlim: tuple[float, float] | None,
     ylim: tuple[float, float] | None,
     slope_ylim: tuple[float, float] | None,
@@ -475,7 +436,7 @@ def _plot_groups_grid(
         main_ax = axes[0, 0]
         main_ax.set_title("No experiment groups")
         main_ax.set_xlabel(x)
-        main_ax.set_ylabel(f"d/d{x} {y}" if derivative else y)
+        main_ax.set_ylabel(y)
         return figure, axes
 
     for row_index, group in enumerate(groups):
@@ -489,12 +450,10 @@ def _plot_groups_grid(
                 section=section,
                 x=x,
                 y=y,
-                alignment=alignment,
                 smoothing=smoothing,
-                clip_aligned_negative=clip_aligned_negative,
             )
             color = color_map(color_index)
-            main_y = curve.main_derivative if derivative else curve.display_y
+            main_y = curve.display_y
             main_ax.plot(
                 curve.x_values,
                 main_y,
@@ -516,7 +475,6 @@ def _plot_groups_grid(
             group,
             x=x,
             y=y,
-            derivative=derivative,
             xlim=xlim,
             ylim=ylim,
             show_legend=False,
@@ -549,13 +507,9 @@ class _PreparedCurve:
         *,
         x_values: NDArray[np.float64],
         display_y: NDArray[np.float64],
-        main_derivative: NDArray[np.float64],
-        slope_y: NDArray[np.float64],
     ) -> None:
         self.x_values = x_values
         self.display_y = display_y
-        self.main_derivative = main_derivative
-        self.slope_y = slope_y
 
 
 class _ForceDisplacementCurve:
@@ -577,9 +531,7 @@ def _prepare_curve(
     section: str,
     x: str,
     y: str,
-    alignment: str | Mapping[str, Any] | None,
     smoothing: Mapping[str, Any] | None,
-    clip_aligned_negative: bool,
 ) -> _PreparedCurve:
     table = experiment.section(section)
     x_values = np.asarray(table[x], dtype=np.float64)
@@ -590,28 +542,9 @@ def _prepare_curve(
         else raw_y.copy()
     )
 
-    if alignment is not None:
-        alignment_kwargs = (
-            {"method": alignment}
-            if isinstance(alignment, str)
-            else dict(alignment)
-        )
-        aligned = align_curve(x_values, raw_y, **alignment_kwargs)
-        x_values = aligned.shifted_x
-        if clip_aligned_negative:
-            mask = x_values >= 0.0
-            x_values = x_values[mask]
-            raw_y = raw_y[mask]
-            display_y = display_y[mask]
-
-    main_derivative = _gradient_or_zeros(display_y, x_values)
-    slope_source = display_y if smoothing is not None else raw_y
-    slope_y = _gradient_or_zeros(slope_source, x_values)
     return _PreparedCurve(
         x_values=x_values,
         display_y=display_y,
-        main_derivative=main_derivative,
-        slope_y=slope_y,
     )
 
 
@@ -638,14 +571,12 @@ def _decorate_group_axes(
     *,
     x: str,
     y: str,
-    derivative: bool,
     xlim: tuple[float, float] | None,
     ylim: tuple[float, float] | None,
     show_legend: bool,
 ) -> None:
     ax.set_title(f"Group {group.index} ({len(group.experiments)} experiments)")
     ax.set_xlabel(x)
-    ax.set_ylabel(f"d/d{x} {y}" if derivative else y)
     if xlim is not None:
         ax.set_xlim(*xlim)
     if ylim is not None:
@@ -653,24 +584,6 @@ def _decorate_group_axes(
     ax.grid(alpha=0.2)
     if show_legend:
         ax.legend()
-
-
-def _gradient_or_zeros(
-    values: NDArray[np.float64], x_values: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """Return a gradient when possible, otherwise a zero-valued fallback.
-
-    Args:
-        values: Signal values to differentiate.
-        x_values: X-axis coordinates associated with `values`.
-
-    Returns:
-        Gradient array, or zeros for signals that are too short.
-    """
-
-    if len(values) < 2:
-        return np.zeros_like(values)
-    return gradient(values, x_values)
 
 
 def _coerce_groups(

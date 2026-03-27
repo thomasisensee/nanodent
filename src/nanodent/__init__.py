@@ -4,8 +4,6 @@ from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from nanodent.analysis.align import AlignmentResult, align_curve
-from nanodent.analysis.derivative import gradient
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.fit import FitResult, curve_fit_model
 from nanodent.analysis.oliver_pharr import (
@@ -44,7 +42,6 @@ except metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
 __all__ = [
-    "AlignmentResult",
     "Experiment",
     "ExperimentGroup",
     "ExperimentPaths",
@@ -57,7 +54,6 @@ __all__ = [
     "SignalTable",
     "Study",
     "__version__",
-    "align_curve",
     "analyze_oliver_pharr",
     "classify_gradual_onset",
     "classify_high_displacement",
