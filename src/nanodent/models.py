@@ -8,8 +8,6 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-FloatArray = NDArray[np.float64]
-
 
 @dataclass(frozen=True, slots=True)
 class MetadataEntry:
@@ -47,7 +45,7 @@ class ExperimentPaths:
 class SignalTable:
     """Tabular numeric section data with normalized column names."""
 
-    columns: dict[str, FloatArray]
+    columns: dict[str, NDArray[np.float64]]
     point_count: int
     raw_columns: tuple[str, ...]
 
@@ -73,7 +71,7 @@ class SignalTable:
 
         return self.point_count
 
-    def __getitem__(self, column_name: str) -> FloatArray:
+    def __getitem__(self, column_name: str) -> NDArray[np.float64]:
         """Return one column by normalized column name.
 
         Args:
@@ -91,7 +89,7 @@ class SignalTable:
 
         return tuple(self.columns.keys())
 
-    def to_dict(self) -> dict[str, FloatArray]:
+    def to_dict(self) -> dict[str, NDArray[np.float64]]:
         """Return a shallow copy of the column mapping.
 
         Returns:

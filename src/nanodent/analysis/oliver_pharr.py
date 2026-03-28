@@ -1,9 +1,9 @@
 """Oliver-Pharr-style unloading analysis helpers."""
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -13,9 +13,6 @@ from nanodent.analysis.filters import savgol
 
 if TYPE_CHECKING:
     from nanodent.study import Study
-
-FloatArray = NDArray[np.float64]
-FrozenMapping = Mapping[str, Any] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,15 +29,15 @@ class OliverPharrExperimentResult:
     unloading_end_index: int = 0
     fit_point_count: int = 0
     used_smoothing: bool = False
-    smoothing: FrozenMapping = None
+    smoothing: Mapping[str, Any] | None = None
     stiffness_uN_per_nm: float | None = None
     force_intercept_uN: float | None = None
     depth_intercept_nm: float | None = None
     r_squared: float | None = None
-    x_fit: FloatArray = field(
+    x_fit: NDArray[np.float64] = field(
         default_factory=lambda: np.empty(0, dtype=np.float64)
     )
-    y_fit: FloatArray = field(
+    y_fit: NDArray[np.float64] = field(
         default_factory=lambda: np.empty(0, dtype=np.float64)
     )
 
@@ -69,7 +66,7 @@ class OliverPharrBatchResult:
     study: "Study"
     results: tuple[OliverPharrExperimentResult, ...]
     unloading_fraction: float
-    smoothing: FrozenMapping = None
+    smoothing: Mapping[str, Any] | None = None
     fit_num_points: int = 200
 
     def __post_init__(self) -> None:
@@ -324,7 +321,7 @@ def _failed_result(
     unloading_end_index: int,
     fit_point_count: int = 0,
     used_smoothing: bool,
-    smoothing: FrozenMapping,
+    smoothing: Mapping[str, Any] | None,
 ) -> OliverPharrExperimentResult:
     """Build a standardized unsuccessful analysis result."""
 
@@ -351,7 +348,7 @@ def _failed_result(
 
 def _freeze_mapping(
     mapping: Mapping[str, Any] | None,
-) -> FrozenMapping:
+) -> Mapping[str, Any] | None:
     """Return an immutable copy of an optional keyword mapping."""
 
     if mapping is None:
@@ -367,7 +364,9 @@ def _linear_model(
     return slope * x_values + intercept
 
 
-def _estimate_slope(x_values: FloatArray, y_values: FloatArray) -> float:
+def _estimate_slope(
+    x_values: NDArray[np.float64], y_values: NDArray[np.float64]
+) -> float:
     """Estimate an initial slope from the endpoints of one fit window."""
 
     delta_x = float(x_values[-1] - x_values[0])
@@ -376,7 +375,9 @@ def _estimate_slope(x_values: FloatArray, y_values: FloatArray) -> float:
     return float((y_values[-1] - y_values[0]) / delta_x)
 
 
-def _r_squared(observed: FloatArray, predicted: FloatArray) -> float:
+def _r_squared(
+    observed: NDArray[np.float64], predicted: NDArray[np.float64]
+) -> float:
     """Return the coefficient of determination for one fitted window."""
 
     residual_sum = float(np.sum((observed - predicted) ** 2))

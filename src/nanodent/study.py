@@ -1,8 +1,9 @@
 """Study-level containers and grouping utilities."""
 
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Iterable, Iterator, Mapping, Sequence
+from typing import Any
 
 from nanodent.analysis.oliver_pharr import (
     OliverPharrBatchResult,
