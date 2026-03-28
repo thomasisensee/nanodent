@@ -58,7 +58,7 @@ class ExperimentGroup:
 
         Returns:
             Dictionary containing the group index, temporal extent, experiment
-            count, and experiment stems.
+            count, and experiment stems annotated with enabled state.
         """
 
         return {
@@ -73,7 +73,11 @@ class ExperimentGroup:
             "start": self.start,
             "end": self.end,
             "duration": self.duration,
-            "stems": self.stems,
+            "stems": tuple(
+                f"{experiment.stem} "
+                f"({'enabled' if experiment.enabled else 'disabled'})"
+                for experiment in self.experiments
+            ),
         }
 
 

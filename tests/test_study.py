@@ -91,8 +91,8 @@ def test_describe_groups_returns_group_summaries() -> None:
     assert summaries[2]["start"] == study.experiments[3].timestamp
     assert summaries[2]["end"] == study.experiments[4].timestamp
     assert summaries[2]["stems"] == (
-        "Tritium_Retention_Study_04.03.2026_0000",
-        "Tritium_Retention_Study_04.03.2026_0001",
+        "Tritium_Retention_Study_04.03.2026_0000 (enabled)",
+        "Tritium_Retention_Study_04.03.2026_0001 (enabled)",
     )
 
 
@@ -113,6 +113,11 @@ def test_describe_groups_includes_disabled_experiments_by_default() -> None:
     assert summaries[2]["enabled_count"] == 2
     assert summaries[3]["enabled_count"] == 0
     assert summaries[4]["enabled_count"] == 1
+    assert summaries[0]["stems"] == (f"{FLAT_FORCE_STEM} (disabled)",)
+    assert summaries[2]["stems"] == (
+        "Tritium_Retention_Study_04.03.2026_0000 (enabled)",
+        "Tritium_Retention_Study_04.03.2026_0001 (enabled)",
+    )
 
 
 def test_classify_quality_disables_gradual_onset_experiment() -> None:
