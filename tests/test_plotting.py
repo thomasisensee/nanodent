@@ -213,7 +213,7 @@ def test_save_experiment_plots_can_include_disabled_experiments(
     study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
 
     saved_paths = save_experiment_plots(
-        study, tmp_path, include_disabled=True, image_format="pdf"
+        study, tmp_path, selection="both", image_format="pdf"
     )
 
     assert len(saved_paths) == 8
@@ -222,3 +222,51 @@ def test_save_experiment_plots_can_include_disabled_experiments(
         "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0060.pdf"
     )
     assert all(path.exists() for path in saved_paths)
+
+
+def test_save_experiment_plots_can_target_only_disabled_experiments(
+    tmp_path: Path,
+) -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+
+    saved_paths = save_experiment_plots(
+        study, tmp_path, selection="disabled", image_format="png"
+    )
+
+    assert len(saved_paths) == 4
+    assert [path.name for path in saved_paths] == [
+        "AIrIndent10000nm 02.png",
+        "Tritium_Retention_Study_04.03.2026_0005.png",
+        "Tritium_Retention_Study_04.03.2026_0009.png",
+        "Tritium_Retention_Study_04.03.2026_THU_morning_0001.png",
+    ]
+    assert all(path.exists() for path in saved_paths)
+
+
+def test_save_experiment_plots_can_overlay_oliver_pharr_fits(
+    tmp_path: Path,
+) -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+    batch = study.analyze_oliver_pharr()
+
+    save_experiment_plots(
+        [
+            next(
+                exp
+                for exp in study.experiments
+                if exp.stem == "Tritium_Retention_Study_04.03.2026_0000"
+            )
+        ],
+        tmp_path,
+        oliver_pharr=batch,
+        close=False,
+    )
+
+    figure = plt.figure(plt.get_fignums()[-1])
+    ax = figure.axes[0]
+
+    assert len(ax.lines) == 2
+    assert ax.lines[1].get_label() == (
+        "Tritium_Retention_Study_04.03.2026_0000 fit"
+    )
+    plt.close(figure)

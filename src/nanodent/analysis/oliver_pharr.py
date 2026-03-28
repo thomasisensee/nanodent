@@ -162,6 +162,20 @@ def analyze_oliver_pharr(
     peak_force = float(active_force[peak])
     peak_disp = float(active_disp[peak])
 
+    if peak >= len(active_force) - 1:
+        return _failed_result(
+            stem=stem,
+            reason="no_unloading_branch",
+            peak_index=peak,
+            peak_force_uN=peak_force,
+            peak_disp_nm=peak_disp,
+            unloading_start_index=peak,
+            unloading_end_index=peak,
+            fit_point_count=1,
+            used_smoothing=frozen_smoothing is not None,
+            smoothing=frozen_smoothing,
+        )
+
     unloading_length = len(active_force) - peak
     fit_point_count = max(
         int(np.ceil(unloading_length * unloading_fraction)), 1

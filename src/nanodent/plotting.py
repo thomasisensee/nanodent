@@ -195,6 +195,7 @@ def plot_force_displacement(
     *,
     oliver_pharr: OliverPharrBatchResult | None = None,
     smoothing: Mapping[str, Any] | None = None,
+    cmap: str = "viridis",
     ax: Axes | None = None,
     fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
@@ -209,6 +210,8 @@ def plot_force_displacement(
         smoothing: Optional keyword arguments for `nanodent.savgol`. When
             provided, the same filter is applied to displacement and force
             before plotting.
+        cmap: Matplotlib colormap name used when plotting multiple
+            experiments on one axes.
         ax: Existing axes to draw on. A new axes is created when omitted.
         fit_kwargs: Optional keyword arguments applied only to Oliver-Pharr fit
             overlays. These override the default dashed-line styling.
@@ -225,21 +228,24 @@ def plot_force_displacement(
 
     if not experiments:
         ax.set_title(default_title)
-        ax.set_xlabel("Disp / nm")
-        ax.set_ylabel("Force / μN")
+        ax.set_xlabel("disp_nm")
+        ax.set_ylabel("force_uN")
         ax.grid(alpha=0.2)
         return ax
 
     fit_lookup = _oliver_pharr_lookup(oliver_pharr)
-    for experiment in experiments:
+    color_map = plt.get_cmap(cmap, max(len(experiments), 1))
+    for index, experiment in enumerate(experiments):
         curve = _prepare_force_displacement_curve(
             experiment, smoothing=smoothing
         )
+        curve_kwargs = dict(line_kwargs)
+        curve_kwargs.setdefault("color", color_map(index))
         ax.plot(
             curve.x_values,
             curve.y_values,
             label=experiment.stem,
-            **line_kwargs,
+            **curve_kwargs,
         )
 
         fit_result = fit_lookup.get(experiment.stem)
@@ -260,8 +266,8 @@ def plot_force_displacement(
         ax.plot(fit_result.x_fit, fit_result.y_fit, **overlay_kwargs)
 
     ax.set_title(default_title)
-    ax.set_xlabel("Disp / nm")
-    ax.set_ylabel("Force / μN")
+    ax.set_xlabel("disp_nm")
+    ax.set_ylabel("force_uN")
     ax.grid(alpha=0.2)
     if len(experiments) > 1:
         ax.legend()
@@ -277,12 +283,14 @@ def save_experiment_plots(
     y: str = "force_uN",
     smoothing: Mapping[str, Any] | None = None,
     max_gap: timedelta = timedelta(minutes=30),
-    include_disabled: bool = False,
+    selection: Literal["enabled", "disabled", "both"] = "enabled",
+    oliver_pharr: OliverPharrBatchResult | None = None,
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] | None = None,
     image_format: str = "png",
     dpi: float = 150.0,
     close: bool = True,
+    fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
 ) -> list[Path]:
     """Save one simple plot per experiment using output names from
@@ -296,12 +304,17 @@ def save_experiment_plots(
         y: Column name to plot on the y-axis.
         smoothing: Optional keyword arguments for `nanodent.savgol`.
         max_gap: Time gap used when `groups` is a `Study`.
-        include_disabled: Whether disabled experiments should be included.
+        selection: Which experiment status to save: enabled experiments only,
+            disabled experiments only, or both.
+        oliver_pharr: Optional batch result used to overlay successful fitted
+            unloading lines on standard force-displacement plots.
         xlim: Optional x-axis limits applied to every saved plot.
         ylim: Optional y-axis limits applied to every saved plot.
         image_format: File format/extension passed to Matplotlib.
         dpi: Rasterization density used by `Figure.savefig`.
         close: Whether to close each figure after saving.
+        fit_kwargs: Optional keyword arguments applied only to Oliver-Pharr fit
+            overlays. These override the default dashed-line styling.
         **line_kwargs: Additional keyword arguments passed through to
             `Axes.plot`.
 
@@ -309,28 +322,45 @@ def save_experiment_plots(
         Paths to the saved plot files.
     """
 
-    experiments = _coerce_experiments(
-        groups, max_gap=max_gap, include_disabled=include_disabled
+    experiments = _coerce_experiments_for_selection(
+        groups, max_gap=max_gap, selection=selection
     )
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
 
     saved_paths: list[Path] = []
     suffix = f".{image_format.lstrip('.')}"
+    use_force_displacement = (
+        section == "test" and x == "disp_nm" and y == "force_uN"
+    )
+    if oliver_pharr is not None and not use_force_displacement:
+        raise ValueError(
+            "Oliver-Pharr overlays are only supported for test-section "
+            "force-displacement plots."
+        )
     for experiment in experiments:
         figure, ax = plt.subplots()
-        curve = _prepare_curve(
-            experiment,
-            section=section,
-            x=x,
-            y=y,
-            smoothing=smoothing,
-        )
-        y_values = curve.display_y
-        ax.plot(curve.x_values, y_values, **line_kwargs)
-        ax.set_title(experiment.stem)
-        ax.set_xlabel(x)
-        ax.set_ylabel(y)
+        if use_force_displacement:
+            plot_force_displacement(
+                experiment,
+                ax=ax,
+                oliver_pharr=oliver_pharr,
+                smoothing=smoothing,
+                fit_kwargs=fit_kwargs,
+                **line_kwargs,
+            )
+        else:
+            curve = _prepare_curve(
+                experiment,
+                section=section,
+                x=x,
+                y=y,
+                smoothing=smoothing,
+            )
+            ax.plot(curve.x_values, curve.display_y, **line_kwargs)
+            ax.set_title(experiment.stem)
+            ax.set_xlabel(x)
+            ax.set_ylabel(y)
         if xlim is not None:
             ax.set_xlim(*xlim)
         if ylim is not None:
@@ -635,6 +665,36 @@ def _coerce_experiments(
         for group in resolved_groups
         for experiment in group.experiments
     ]
+
+
+def _coerce_experiments_for_selection(
+    groups: LineGroups,
+    *,
+    max_gap: timedelta,
+    selection: Literal["enabled", "disabled", "both"],
+) -> list[Experiment]:
+    """Normalize supported plotting inputs into experiments by status."""
+
+    if selection == "enabled":
+        return _coerce_experiments(
+            groups, max_gap=max_gap, include_disabled=False
+        )
+    if selection == "disabled":
+        all_experiments = _coerce_experiments(
+            groups, max_gap=max_gap, include_disabled=True
+        )
+        return [
+            experiment
+            for experiment in all_experiments
+            if not experiment.enabled
+        ]
+    if selection == "both":
+        return _coerce_experiments(
+            groups, max_gap=max_gap, include_disabled=True
+        )
+    raise ValueError(
+        "selection must be one of 'enabled', 'disabled', or 'both'."
+    )
 
 
 def _coerce_timeline_groups(
