@@ -33,8 +33,6 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.figure import Figure
 
-    from nanodent.plotting import AxesGrid
-
 try:
     __version__ = metadata.version("nanodent")
 except metadata.PackageNotFoundError:
@@ -61,28 +59,11 @@ __all__ = [
     "classify_quality",
     "load_experiment",
     "load_folder",
-    "plot_force_displacement",
+    "plot_experiments",
     "plot_group_timeline",
-    "plot_groups",
     "savgol",
     "save_experiment_plots",
 ]
-
-
-def plot_groups(*args: Any, **kwargs: Any) -> tuple["Figure", "AxesGrid"]:
-    """Lazily import Matplotlib plotting helpers when needed.
-
-    Args:
-        *args: Positional args forwarded to `nanodent.plotting.plot_groups`.
-        **kwargs: Keyword args forwarded to `nanodent.plotting.plot_groups`.
-
-    Returns:
-        Figure and axes containing the plotted curves.
-    """
-
-    from nanodent.plotting import plot_groups as _plot_groups
-
-    return _plot_groups(*args, **kwargs)
 
 
 def plot_group_timeline(*args: Any, **kwargs: Any) -> tuple["Figure", "Axes"]:
@@ -103,24 +84,22 @@ def plot_group_timeline(*args: Any, **kwargs: Any) -> tuple["Figure", "Axes"]:
     return _plot_group_timeline(*args, **kwargs)
 
 
-def plot_force_displacement(*args: Any, **kwargs: Any) -> "Axes":
-    """Lazily import the single-axes force-displacement plotting helper.
+def plot_experiments(*args: Any, **kwargs: Any) -> "Axes":
+    """Lazily import the generic experiment plotting helper.
 
     Args:
         *args: Positional args forwarded to
-            `nanodent.plotting.plot_force_displacement`.
+            `nanodent.plotting.plot_experiments`.
         **kwargs: Keyword args forwarded to
-            `nanodent.plotting.plot_force_displacement`.
+            `nanodent.plotting.plot_experiments`.
 
     Returns:
-        Axes containing the plotted force-displacement curves.
+        Axes containing the plotted experiment curves.
     """
 
-    from nanodent.plotting import (
-        plot_force_displacement as _plot_force_displacement,
-    )
+    from nanodent.plotting import plot_experiments as _plot_experiments
 
-    return _plot_force_displacement(*args, **kwargs)
+    return _plot_experiments(*args, **kwargs)
 
 
 def save_experiment_plots(*args: Any, **kwargs: Any) -> list["Path"]:

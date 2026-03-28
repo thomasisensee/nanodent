@@ -4,14 +4,16 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
+import pytest
 
 from nanodent import (
     load_folder,
-    plot_force_displacement,
+    plot_experiments,
     plot_group_timeline,
-    plot_groups,
     save_experiment_plots,
 )
+from nanodent.analysis.filters import savgol
 
 DATA_DIR = Path(__file__).parent / "data"
 BAD_STEMS = [
@@ -22,57 +24,7 @@ BAD_STEMS = [
 ]
 
 
-def test_plot_groups_defaults_to_one_panel_per_group() -> None:
-    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
-    groups = study.group_by_time_gap()
-
-    figure, axes = plot_groups(groups, linewidth=2.5, cmap="plasma")
-
-    assert figure is axes[0, 0].figure
-    assert axes.shape == (2, 1)
-    assert len(axes[0, 0].lines) == 2
-    assert len(axes[1, 0].lines) == 2
-    assert all(
-        line.get_linewidth() == 2.5
-        for axis in axes[:, 0]
-        for line in axis.lines
-    )
-    assert axes[0, 0].get_xlabel() == "disp_nm"
-    assert axes[0, 0].get_ylabel() == "force_uN"
-
-
-def test_plot_groups_restarts_colormap_for_each_group() -> None:
-    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
-    groups = study.group_by_time_gap()
-
-    _, axes = plot_groups(groups, cmap="plasma")
-
-    assert axes[0, 0].lines[0].get_color() == axes[1, 0].lines[0].get_color()
-    assert axes[0, 0].lines[1].get_color() == axes[1, 0].lines[1].get_color()
-
-
-def test_plot_groups_overlay_preserves_combined_axes_behavior() -> None:
-    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
-    groups = study.group_by_time_gap()
-
-    figure, axes = plot_groups(groups, layout="overlay", cmap="plasma")
-
-    assert figure is axes.figure
-    assert len(axes.lines) == 4
-    assert axes.get_ylabel() == "force_uN"
-
-
-def test_plot_groups_overlay_restarts_colormap_for_each_group() -> None:
-    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
-    groups = study.group_by_time_gap()
-
-    _, axes = plot_groups(groups, layout="overlay", cmap="plasma")
-
-    assert axes.lines[0].get_color() == axes.lines[2].get_color()
-    assert axes.lines[1].get_color() == axes.lines[3].get_color()
-
-
-def test_plot_force_displacement_returns_passed_axes_for_one_exp() -> None:
+def test_plot_experiments_returns_passed_axes_for_one_exp() -> None:
     study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
     experiment = next(
         exp
@@ -81,27 +33,71 @@ def test_plot_force_displacement_returns_passed_axes_for_one_exp() -> None:
     )
     _, ax = plt.subplots()
 
-    returned_ax = plot_force_displacement(experiment, ax=ax)
+    returned_ax = plot_experiments(ax, experiment)
 
     assert returned_ax is ax
     assert len(ax.lines) == 1
-    assert ax.get_title() == experiment.stem
-    assert ax.get_xlabel() == "disp_nm"
-    assert ax.get_ylabel() == "force_uN"
+    assert ax.lines[0].get_label() == experiment.stem
+    assert ax.get_title() == ""
+    assert ax.get_xlabel() == ""
+    assert ax.get_ylabel() == ""
+    assert ax.get_legend() is None
 
 
-def test_plot_force_displacement_can_overlay_group_on_one_axes() -> None:
+def test_plot_experiments_can_overlay_group_on_one_axes() -> None:
     study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
     group = study.group_by_time_gap()[0]
+    _, ax = plt.subplots()
 
-    ax = plot_force_displacement(group, cmap="plasma")
+    plot_experiments(ax, group, cmap="plasma")
 
     assert len(ax.lines) == 2
-    assert ax.get_title() == "Group 0 (2 experiments)"
-    assert ax.get_legend() is not None
+    assert ax.lines[0].get_color() != ax.lines[1].get_color()
+    assert [line.get_label() for line in ax.lines] == [
+        "Tritium_Retention_Study_04.03.2026_0000",
+        "Tritium_Retention_Study_04.03.2026_0001",
+    ]
+    assert ax.get_legend() is None
 
 
-def test_plot_force_displacement_can_overlay_oliver_pharr_fit() -> None:
+def test_plot_experiments_can_flatten_a_study_with_selection() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+    _, disabled_ax = plt.subplots()
+    _, all_ax = plt.subplots()
+
+    plot_experiments(disabled_ax, study, selection="disabled")
+    plot_experiments(all_ax, study, selection="both")
+
+    assert len(disabled_ax.lines) == 4
+    assert len(all_ax.lines) == 8
+
+
+def test_plot_experiments_smooths_both_x_and_y() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+    experiment = next(
+        exp
+        for exp in study.experiments
+        if exp.stem == "Tritium_Retention_Study_04.03.2026_0000"
+    )
+    smoothing = {"window_length": 21, "polyorder": 2}
+    table = experiment.section("test")
+    raw_x = np.asarray(table["disp_nm"], dtype=np.float64)
+    raw_y = np.asarray(table["force_uN"], dtype=np.float64)
+    _, ax = plt.subplots()
+
+    plot_experiments(ax, experiment, smoothing=smoothing)
+
+    assert np.allclose(
+        ax.lines[0].get_xdata(),
+        savgol(raw_x, **smoothing),
+    )
+    assert np.allclose(
+        ax.lines[0].get_ydata(),
+        savgol(raw_y, **smoothing),
+    )
+
+
+def test_plot_experiments_can_overlay_oliver_pharr_fit() -> None:
     study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
     experiment = next(
         exp
@@ -109,8 +105,9 @@ def test_plot_force_displacement_can_overlay_oliver_pharr_fit() -> None:
         if exp.stem == "Tritium_Retention_Study_04.03.2026_0000"
     )
     batch = study.analyze_oliver_pharr()
+    _, ax = plt.subplots()
 
-    ax = plot_force_displacement(experiment, oliver_pharr=batch)
+    plot_experiments(ax, experiment, oliver_pharr=batch)
 
     assert len(ax.lines) == 2
     assert ax.lines[1].get_color() == "black"
@@ -119,19 +116,20 @@ def test_plot_force_displacement_can_overlay_oliver_pharr_fit() -> None:
     assert ax.lines[1].get_label() == f"{experiment.stem} fit"
 
 
-def test_plot_force_displacement_skips_missing_oliver_pharr_fit() -> None:
+def test_plot_experiments_skips_missing_oliver_pharr_fit() -> None:
     study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
     experiment = next(
         exp for exp in study.experiments if exp.stem == "AIrIndent10000nm 02"
     )
     batch = study.analyze_oliver_pharr()
+    _, ax = plt.subplots()
 
-    ax = plot_force_displacement(experiment, oliver_pharr=batch)
+    plot_experiments(ax, experiment, selection="both", oliver_pharr=batch)
 
     assert len(ax.lines) == 1
 
 
-def test_plot_force_displacement_allows_fit_style_overrides() -> None:
+def test_plot_experiments_allows_fit_style_overrides() -> None:
     study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
     experiment = next(
         exp
@@ -139,8 +137,10 @@ def test_plot_force_displacement_allows_fit_style_overrides() -> None:
         if exp.stem == "Tritium_Retention_Study_04.03.2026_0000"
     )
     batch = study.analyze_oliver_pharr()
+    _, ax = plt.subplots()
 
-    ax = plot_force_displacement(
+    plot_experiments(
+        ax,
         experiment,
         oliver_pharr=batch,
         fit_kwargs={"color": "red", "linewidth": 4.0, "linestyle": ":"},
@@ -149,6 +149,22 @@ def test_plot_force_displacement_allows_fit_style_overrides() -> None:
     assert ax.lines[1].get_color() == "red"
     assert ax.lines[1].get_linewidth() == 4.0
     assert ax.lines[1].get_linestyle() == ":"
+
+
+def test_plot_experiments_rejects_fit_overlay_for_nonstandard_axes() -> None:
+    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
+    batch = study.analyze_oliver_pharr()
+    experiment = next(
+        exp
+        for exp in study.experiments
+        if exp.stem == "Tritium_Retention_Study_04.03.2026_0000"
+    )
+    _, ax = plt.subplots()
+
+    with pytest.raises(ValueError, match="Oliver-Pharr overlays"):
+        plot_experiments(
+            ax, experiment, x="time_s", y="force_uN", oliver_pharr=batch
+        )
 
 
 def test_plot_group_timeline_supports_study_and_explicit_groups() -> None:
@@ -166,16 +182,6 @@ def test_plot_group_timeline_supports_study_and_explicit_groups() -> None:
         "Group 0 (2 exp)",
         "Group 1 (2 exp)",
     ]
-
-
-def test_plot_groups_can_include_disabled_experiments_when_requested() -> None:
-    study = load_folder(DATA_DIR).disable_experiments(BAD_STEMS)
-
-    _, default_axes = plot_groups(study, layout="overlay")
-    _, all_axes = plot_groups(study, layout="overlay", include_disabled=True)
-
-    assert len(default_axes.lines) == 4
-    assert len(all_axes.lines) == 8
 
 
 def test_plot_group_timeline_can_include_disabled_experiments() -> None:

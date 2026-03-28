@@ -1,4 +1,4 @@
-"""Matplotlib plotting helpers for experiment groups."""
+"""Matplotlib plotting helpers for experiment data."""
 
 from collections.abc import Mapping, Sequence
 from datetime import timedelta
@@ -17,88 +17,13 @@ from nanodent.analysis.oliver_pharr import OliverPharrBatchResult
 from nanodent.models import Experiment
 from nanodent.study import ExperimentGroup, Study
 
-LineGroups = (
-    Study | ExperimentGroup | Sequence[ExperimentGroup] | Sequence[Experiment]
+PlotSelection = (
+    Study
+    | Experiment
+    | ExperimentGroup
+    | Sequence[Experiment]
+    | Sequence[ExperimentGroup]
 )
-CurveSelection = Experiment | ExperimentGroup | Sequence[Experiment]
-AxesGrid = Axes | NDArray[np.object_]
-
-
-def plot_groups(
-    groups: LineGroups,
-    *,
-    section: str = "test",
-    x: str = "disp_nm",
-    y: str = "force_uN",
-    cmap: str = "viridis",
-    smoothing: Mapping[str, Any] | None = None,
-    layout: Literal["grid", "overlay"] = "grid",
-    max_gap: timedelta = timedelta(minutes=30),
-    include_disabled: bool = False,
-    xlim: tuple[float, float] | None = None,
-    ylim: tuple[float, float] | None = None,
-    sharex: bool = True,
-    ax: Axes | None = None,
-    **line_kwargs: Any,
-) -> tuple[Figure, AxesGrid]:
-    """Plot experiment groups as either a grid or an overlay.
-
-    Args:
-        groups: Study, experiment group, or experiment sequence to plot.
-        section: Section name to read from each experiment.
-        x: Column name to plot on the x-axis.
-        y: Column name to plot on the y-axis.
-        cmap: Matplotlib colormap name used to color the curves.
-        smoothing: Optional keyword arguments for `nanodent.savgol`.
-        layout: Plot layout. `grid` creates one panel per group, while
-            `overlay` combines all groups on one axes.
-        max_gap: Time gap used when `groups` is a `Study`.
-        include_disabled: Whether disabled experiments should remain visible in
-            the plotted groups.
-        xlim: Optional x-axis limits applied to every subplot.
-        ylim: Optional y-axis limits applied to the main curve panels.
-        sharex: Whether grid subplots should share an x-axis.
-        ax: Existing axes used only in `overlay` mode.
-        **line_kwargs: Additional keyword arguments passed through to
-            `Axes.plot`.
-
-    Returns:
-        Figure and axes containing the plotted curves. In `grid` mode the axes
-        object is a NumPy object array; in `overlay` mode it is a single axes.
-    """
-
-    resolved_groups = _coerce_groups(
-        groups, max_gap=max_gap, include_disabled=include_disabled
-    )
-    if layout == "grid" and ax is not None:
-        raise ValueError(
-            "The 'ax' parameter is only supported when layout='overlay'."
-        )
-    if layout == "overlay":
-        return _plot_groups_overlay(
-            resolved_groups,
-            section=section,
-            x=x,
-            y=y,
-            cmap=cmap,
-            smoothing=smoothing,
-            xlim=xlim,
-            ylim=ylim,
-            ax=ax,
-            **line_kwargs,
-        )
-    return _plot_groups_grid(
-        resolved_groups,
-        section=section,
-        x=x,
-        y=y,
-        cmap=cmap,
-        smoothing=smoothing,
-        xlim=xlim,
-        ylim=ylim,
-        sharex=sharex,
-        **line_kwargs,
-    )
 
 
 def plot_group_timeline(
@@ -111,23 +36,7 @@ def plot_group_timeline(
     markersize: float = 6.0,
     ax: Axes | None = None,
 ) -> tuple[Figure, Axes]:
-    """Plot a static timeline view of automatically grouped experiments.
-
-    Args:
-        groups: Study to group automatically, or explicit experiment groups to
-            display as-is.
-        max_gap: Time gap used when `groups` is a `Study`.
-        include_disabled: Whether disabled experiments should remain visible in
-            the timeline.
-        cmap: Matplotlib colormap name used for group colors.
-        marker: Marker style used for experiment timestamps.
-        markersize: Marker size used for experiment timestamps.
-        ax: Existing axes to draw on. A new figure and axes are created when
-            omitted.
-
-    Returns:
-        Figure and axes containing the group timeline visualization.
-    """
+    """Plot a static timeline view of automatically grouped experiments."""
 
     resolved_groups = _coerce_timeline_groups(
         groups, max_gap=max_gap, include_disabled=include_disabled
@@ -190,54 +99,44 @@ def plot_group_timeline(
     return figure, ax
 
 
-def plot_force_displacement(
-    target: CurveSelection,
+def plot_experiments(
+    ax: Axes,
+    target: PlotSelection,
     *,
-    oliver_pharr: OliverPharrBatchResult | None = None,
+    section: str = "test",
+    x: str = "disp_nm",
+    y: str = "force_uN",
     smoothing: Mapping[str, Any] | None = None,
     cmap: str = "viridis",
-    ax: Axes | None = None,
+    max_gap: timedelta = timedelta(minutes=30),
+    selection: Literal["enabled", "disabled", "both"] = "enabled",
+    oliver_pharr: OliverPharrBatchResult | None = None,
     fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
 ) -> Axes:
-    """Plot force versus displacement for explicit experiment selections.
+    """Plot one or more experiment curves onto an existing axes."""
 
-    Args:
-        target: Experiment, experiment group, or explicit experiment sequence
-            to overlay on one axes.
-        oliver_pharr: Optional batch result used to overlay successful fitted
-            unloading lines by matching experiment stems.
-        smoothing: Optional keyword arguments for `nanodent.savgol`. When
-            provided, the same filter is applied to displacement and force
-            before plotting.
-        cmap: Matplotlib colormap name used when plotting multiple
-            experiments on one axes.
-        ax: Existing axes to draw on. A new axes is created when omitted.
-        fit_kwargs: Optional keyword arguments applied only to Oliver-Pharr fit
-            overlays. These override the default dashed-line styling.
-        **line_kwargs: Additional keyword arguments passed through to
-            `Axes.plot` for the experiment curves.
-
-    Returns:
-        Axes containing the plotted force-displacement curves.
-    """
-
-    experiments, default_title = _coerce_curve_selection(target)
-    if ax is None:
-        _, ax = plt.subplots()
-
-    if not experiments:
-        ax.set_title(default_title)
-        ax.set_xlabel("disp_nm")
-        ax.set_ylabel("force_uN")
-        ax.grid(alpha=0.2)
-        return ax
-
+    experiments = _coerce_experiments(
+        target, max_gap=max_gap, selection=selection
+    )
     fit_lookup = _oliver_pharr_lookup(oliver_pharr)
+    use_force_displacement = (
+        section == "test" and x == "disp_nm" and y == "force_uN"
+    )
+    if oliver_pharr is not None and not use_force_displacement:
+        raise ValueError(
+            "Oliver-Pharr overlays are only supported for test-section "
+            "force-displacement plots."
+        )
+
     color_map = plt.get_cmap(cmap, max(len(experiments), 1))
     for index, experiment in enumerate(experiments):
-        curve = _prepare_force_displacement_curve(
-            experiment, smoothing=smoothing
+        curve = _prepare_curve(
+            experiment,
+            section=section,
+            x=x,
+            y=y,
+            smoothing=smoothing,
         )
         curve_kwargs = dict(line_kwargs)
         curve_kwargs.setdefault("color", color_map(index))
@@ -265,17 +164,11 @@ def plot_force_displacement(
             overlay_kwargs.update(dict(fit_kwargs))
         ax.plot(fit_result.x_fit, fit_result.y_fit, **overlay_kwargs)
 
-    ax.set_title(default_title)
-    ax.set_xlabel("disp_nm")
-    ax.set_ylabel("force_uN")
-    ax.grid(alpha=0.2)
-    if len(experiments) > 1:
-        ax.legend()
     return ax
 
 
 def save_experiment_plots(
-    groups: LineGroups,
+    groups: PlotSelection,
     output_dir: str | Path,
     *,
     section: str = "test",
@@ -293,36 +186,9 @@ def save_experiment_plots(
     fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
 ) -> list[Path]:
-    """Save one simple plot per experiment using output names from
-    `.hld` files.
+    """Save one plot per experiment using output names from `.hld` files."""
 
-    Args:
-        groups: Study, experiment group, or experiment sequence to plot.
-        output_dir: Directory where individual plot files will be written.
-        section: Section name to read from each experiment.
-        x: Column name to plot on the x-axis.
-        y: Column name to plot on the y-axis.
-        smoothing: Optional keyword arguments for `nanodent.savgol`.
-        max_gap: Time gap used when `groups` is a `Study`.
-        selection: Which experiment status to save: enabled experiments only,
-            disabled experiments only, or both.
-        oliver_pharr: Optional batch result used to overlay successful fitted
-            unloading lines on standard force-displacement plots.
-        xlim: Optional x-axis limits applied to every saved plot.
-        ylim: Optional y-axis limits applied to every saved plot.
-        image_format: File format/extension passed to Matplotlib.
-        dpi: Rasterization density used by `Figure.savefig`.
-        close: Whether to close each figure after saving.
-        fit_kwargs: Optional keyword arguments applied only to Oliver-Pharr fit
-            overlays. These override the default dashed-line styling.
-        **line_kwargs: Additional keyword arguments passed through to
-            `Axes.plot`.
-
-    Returns:
-        Paths to the saved plot files.
-    """
-
-    experiments = _coerce_experiments_for_selection(
+    experiments = _coerce_experiments(
         groups, max_gap=max_gap, selection=selection
     )
     destination = Path(output_dir)
@@ -330,37 +196,24 @@ def save_experiment_plots(
 
     saved_paths: list[Path] = []
     suffix = f".{image_format.lstrip('.')}"
-    use_force_displacement = (
-        section == "test" and x == "disp_nm" and y == "force_uN"
-    )
-    if oliver_pharr is not None and not use_force_displacement:
-        raise ValueError(
-            "Oliver-Pharr overlays are only supported for test-section "
-            "force-displacement plots."
-        )
     for experiment in experiments:
         figure, ax = plt.subplots()
-        if use_force_displacement:
-            plot_force_displacement(
-                experiment,
-                ax=ax,
-                oliver_pharr=oliver_pharr,
-                smoothing=smoothing,
-                fit_kwargs=fit_kwargs,
-                **line_kwargs,
-            )
-        else:
-            curve = _prepare_curve(
-                experiment,
-                section=section,
-                x=x,
-                y=y,
-                smoothing=smoothing,
-            )
-            ax.plot(curve.x_values, curve.display_y, **line_kwargs)
-            ax.set_title(experiment.stem)
-            ax.set_xlabel(x)
-            ax.set_ylabel(y)
+        plot_experiments(
+            ax,
+            experiment,
+            section=section,
+            x=x,
+            y=y,
+            smoothing=smoothing,
+            max_gap=max_gap,
+            selection="both",
+            oliver_pharr=oliver_pharr,
+            fit_kwargs=fit_kwargs,
+            **line_kwargs,
+        )
+        ax.set_title(experiment.stem)
+        ax.set_xlabel(x)
+        ax.set_ylabel(y)
         if xlim is not None:
             ax.set_xlim(*xlim)
         if ylim is not None:
@@ -379,132 +232,8 @@ def save_experiment_plots(
     return saved_paths
 
 
-def _plot_groups_overlay(
-    groups: list[ExperimentGroup],
-    *,
-    section: str,
-    x: str,
-    y: str,
-    cmap: str,
-    smoothing: Mapping[str, Any] | None,
-    xlim: tuple[float, float] | None,
-    ylim: tuple[float, float] | None,
-    ax: Axes | None,
-    **line_kwargs: Any,
-) -> tuple[Figure, Axes]:
-    figure: Figure
-    if ax is None:
-        figure, ax = plt.subplots()
-    else:
-        figure = ax.figure
-
-    for group in groups:
-        color_map = plt.get_cmap(cmap, max(len(group.experiments), 1))
-        for color_index, experiment in enumerate(group.experiments):
-            curve = _prepare_curve(
-                experiment,
-                section=section,
-                x=x,
-                y=y,
-                smoothing=smoothing,
-            )
-            ax.plot(
-                curve.x_values,
-                curve.display_y,
-                color=color_map(color_index),
-                label=experiment.stem,
-                **line_kwargs,
-            )
-
-    ax.set_xlabel(x)
-    ax.set_ylabel(y)
-    if xlim is not None:
-        ax.set_xlim(*xlim)
-    if ylim is not None:
-        ax.set_ylim(*ylim)
-    ax.legend()
-    return figure, ax
-
-
-def _plot_groups_grid(
-    groups: list[ExperimentGroup],
-    *,
-    section: str,
-    x: str,
-    y: str,
-    cmap: str,
-    smoothing: Mapping[str, Any] | None,
-    xlim: tuple[float, float] | None,
-    ylim: tuple[float, float] | None,
-    sharex: bool,
-    **line_kwargs: Any,
-) -> tuple[Figure, NDArray[np.object_]]:
-    group_count = max(len(groups), 1)
-    figure, axes = plt.subplots(
-        group_count,
-        1,
-        squeeze=False,
-        sharex=sharex,
-        figsize=(9, max(3.5, group_count * 3.6)),
-    )
-
-    if not groups:
-        main_ax = axes[0, 0]
-        main_ax.set_title("No experiment groups")
-        main_ax.set_xlabel(x)
-        main_ax.set_ylabel(y)
-        return figure, axes
-
-    for row_index, group in enumerate(groups):
-        main_ax = axes[row_index, 0]
-        color_map = plt.get_cmap(cmap, max(len(group.experiments), 1))
-
-        for color_index, experiment in enumerate(group.experiments):
-            curve = _prepare_curve(
-                experiment,
-                section=section,
-                x=x,
-                y=y,
-                smoothing=smoothing,
-            )
-            color = color_map(color_index)
-            main_ax.plot(
-                curve.x_values,
-                curve.display_y,
-                color=color,
-                label=experiment.stem,
-                **line_kwargs,
-            )
-
-        _decorate_group_axes(
-            main_ax,
-            group,
-            x=x,
-            y=y,
-            xlim=xlim,
-            ylim=ylim,
-            show_legend=False,
-        )
-
-    figure.tight_layout()
-    return figure, axes[: len(groups), :]
-
-
 class _PreparedCurve:
     """Prepared plotting arrays for one experiment."""
-
-    def __init__(
-        self,
-        *,
-        x_values: NDArray[np.float64],
-        display_y: NDArray[np.float64],
-    ) -> None:
-        self.x_values = x_values
-        self.display_y = display_y
-
-
-class _ForceDisplacementCurve:
-    """Prepared force-displacement arrays for one experiment."""
 
     def __init__(
         self,
@@ -524,122 +253,16 @@ def _prepare_curve(
     y: str,
     smoothing: Mapping[str, Any] | None,
 ) -> _PreparedCurve:
+    """Return plotting arrays for one experiment and signal selection."""
+
     table = experiment.section(section)
     x_values = np.asarray(table[x], dtype=np.float64)
-    raw_y = np.asarray(table[y], dtype=np.float64)
-    display_y = (
-        savgol(raw_y, **dict(smoothing))
-        if smoothing is not None
-        else raw_y.copy()
-    )
-
-    return _PreparedCurve(
-        x_values=x_values,
-        display_y=display_y,
-    )
-
-
-def _prepare_force_displacement_curve(
-    experiment: Experiment,
-    *,
-    smoothing: Mapping[str, Any] | None,
-) -> _ForceDisplacementCurve:
-    """Return explicit force-displacement arrays for one experiment."""
-
-    table = experiment.section("test")
-    x_values = np.asarray(table["disp_nm"], dtype=np.float64)
-    y_values = np.asarray(table["force_uN"], dtype=np.float64)
+    y_values = np.asarray(table[y], dtype=np.float64)
     if smoothing is not None:
         smoothing_kwargs = dict(smoothing)
         x_values = savgol(x_values, **smoothing_kwargs)
         y_values = savgol(y_values, **smoothing_kwargs)
-    return _ForceDisplacementCurve(x_values=x_values, y_values=y_values)
-
-
-def _decorate_group_axes(
-    ax: Axes,
-    group: ExperimentGroup,
-    *,
-    x: str,
-    y: str,
-    xlim: tuple[float, float] | None,
-    ylim: tuple[float, float] | None,
-    show_legend: bool,
-) -> None:
-    ax.set_title(f"Group {group.index} ({len(group.experiments)} experiments)")
-    ax.set_xlabel(x)
-    ax.set_ylabel(y)
-    if xlim is not None:
-        ax.set_xlim(*xlim)
-    if ylim is not None:
-        ax.set_ylim(*ylim)
-    ax.grid(alpha=0.2)
-    if show_legend:
-        ax.legend()
-
-
-def _coerce_groups(
-    groups: LineGroups, *, max_gap: timedelta, include_disabled: bool
-) -> list[ExperimentGroup]:
-    """Normalize supported group inputs into experiment groups.
-
-    Args:
-        groups: Supported grouping input accepted by `plot_groups`.
-        max_gap: Time gap used when `groups` is a `Study`.
-
-    Returns:
-        Concrete experiment groups ready for plotting.
-    """
-
-    if isinstance(groups, Study):
-        return groups.group_by_time_gap(
-            max_gap=max_gap, include_disabled=include_disabled
-        )
-    if isinstance(groups, ExperimentGroup):
-        return _filtered_groups([groups], include_disabled=include_disabled)
-    groups_list = list(groups)
-    if not groups_list:
-        return []
-    first_item = groups_list[0]
-    if isinstance(first_item, ExperimentGroup):
-        return _filtered_groups(groups_list, include_disabled=include_disabled)
-    if isinstance(first_item, Experiment):
-        selected_experiments = tuple(
-            experiment
-            for experiment in groups_list
-            if include_disabled or experiment.enabled
-        )
-        if not selected_experiments:
-            return []
-        return [ExperimentGroup(experiments=selected_experiments, index=0)]
-    raise TypeError(
-        "plot_groups expects a Study, ExperimentGroup, or a sequence "
-        "of those objects."
-    )
-
-
-def _coerce_curve_selection(
-    target: CurveSelection,
-) -> tuple[tuple[Experiment, ...], str]:
-    """Normalize explicit curve selections into experiments and a title."""
-
-    if isinstance(target, Experiment):
-        return (target,), target.stem
-    if isinstance(target, ExperimentGroup):
-        return (
-            target.experiments,
-            f"Group {target.index} ({len(target.experiments)} experiments)",
-        )
-    experiments = tuple(target)
-    if not experiments:
-        return (), "Force vs. Displacement"
-    first_item = experiments[0]
-    if not isinstance(first_item, Experiment):
-        raise TypeError(
-            "plot_force_displacement expects an Experiment, "
-            "ExperimentGroup, or a sequence of Experiment objects."
-        )
-    return experiments, "Force vs. Displacement"
+    return _PreparedCurve(x_values=x_values, y_values=y_values)
 
 
 def _oliver_pharr_lookup(
@@ -653,45 +276,66 @@ def _oliver_pharr_lookup(
 
 
 def _coerce_experiments(
-    groups: LineGroups, *, max_gap: timedelta, include_disabled: bool
-) -> list[Experiment]:
-    """Normalize supported plotting inputs into a flat experiment list."""
-
-    resolved_groups = _coerce_groups(
-        groups, max_gap=max_gap, include_disabled=include_disabled
-    )
-    return [
-        experiment
-        for group in resolved_groups
-        for experiment in group.experiments
-    ]
-
-
-def _coerce_experiments_for_selection(
-    groups: LineGroups,
+    target: PlotSelection,
     *,
     max_gap: timedelta,
     selection: Literal["enabled", "disabled", "both"],
 ) -> list[Experiment]:
     """Normalize supported plotting inputs into experiments by status."""
 
+    if isinstance(target, Study):
+        groups = target.group_by_time_gap(
+            max_gap=max_gap, include_disabled=True
+        )
+        return _select_experiments(
+            [
+                experiment
+                for group in groups
+                for experiment in group.experiments
+            ],
+            selection=selection,
+        )
+    if isinstance(target, Experiment):
+        return _select_experiments([target], selection=selection)
+    if isinstance(target, ExperimentGroup):
+        return _select_experiments(target.experiments, selection=selection)
+
+    items = list(target)
+    if not items:
+        return []
+    first_item = items[0]
+    if isinstance(first_item, ExperimentGroup):
+        return _select_experiments(
+            [
+                experiment
+                for group in items
+                for experiment in group.experiments
+            ],
+            selection=selection,
+        )
+    if isinstance(first_item, Experiment):
+        return _select_experiments(items, selection=selection)
+    raise TypeError(
+        "plot_experiments expects a Study, Experiment, ExperimentGroup, "
+        "or a sequence of Experiment/ExperimentGroup objects."
+    )
+
+
+def _select_experiments(
+    experiments: Sequence[Experiment],
+    *,
+    selection: Literal["enabled", "disabled", "both"],
+) -> list[Experiment]:
+    """Return experiments filtered by enabled/disabled status."""
+
     if selection == "enabled":
-        return _coerce_experiments(
-            groups, max_gap=max_gap, include_disabled=False
-        )
+        return [experiment for experiment in experiments if experiment.enabled]
     if selection == "disabled":
-        all_experiments = _coerce_experiments(
-            groups, max_gap=max_gap, include_disabled=True
-        )
         return [
-            experiment
-            for experiment in all_experiments
-            if not experiment.enabled
+            experiment for experiment in experiments if not experiment.enabled
         ]
     if selection == "both":
-        return _coerce_experiments(
-            groups, max_gap=max_gap, include_disabled=True
-        )
+        return list(experiments)
     raise ValueError(
         "selection must be one of 'enabled', 'disabled', or 'both'."
     )
@@ -703,15 +347,7 @@ def _coerce_timeline_groups(
     max_gap: timedelta,
     include_disabled: bool,
 ) -> list[ExperimentGroup]:
-    """Normalize supported group inputs into timeline-ready experiment groups.
-
-    Args:
-        groups: Study or explicit experiment groups.
-        max_gap: Time gap used when `groups` is a `Study`.
-
-    Returns:
-        Concrete experiment groups ready for timeline plotting.
-    """
+    """Normalize supported group inputs into timeline-ready groups."""
 
     if isinstance(groups, Study):
         return groups.group_by_time_gap(
