@@ -225,8 +225,8 @@ def plot_force_displacement(
 
     if not experiments:
         ax.set_title(default_title)
-        ax.set_xlabel("disp_nm")
-        ax.set_ylabel("force_uN")
+        ax.set_xlabel("Disp / nm")
+        ax.set_ylabel("Force / μN")
         ax.grid(alpha=0.2)
         return ax
 
@@ -260,8 +260,8 @@ def plot_force_displacement(
         ax.plot(fit_result.x_fit, fit_result.y_fit, **overlay_kwargs)
 
     ax.set_title(default_title)
-    ax.set_xlabel("disp_nm")
-    ax.set_ylabel("force_uN")
+    ax.set_xlabel("Disp / nm")
+    ax.set_ylabel("Force / μN")
     ax.grid(alpha=0.2)
     if len(experiments) > 1:
         ax.legend()
