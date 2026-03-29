@@ -4,6 +4,9 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import ArrayLike
+from scipy.signal import find_peaks
+
+from nanodent.analysis.filters import savgol
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +18,37 @@ class QualityCheckResult:
     onset_fraction: float | None = None
     onset_disp_nm: float | None = None
     rise_width_fraction: float | None = None
+
+
+def classify_high_displacement(
+    disp_nm: ArrayLike,
+    *,
+    max_disp_nm: float = 1000.0,
+) -> QualityCheckResult:
+    """Classify runs whose test displacement exceeds a hard limit.
+
+    Args:
+        disp_nm: Displacement values from the test section.
+        max_disp_nm: Maximum allowed displacement in nanometers.
+
+    Returns:
+        Quality classification result. Curves that exceed the displacement
+        limit are marked with reason `high_disp`.
+    """
+
+    x = np.asarray(disp_nm, dtype=np.float64)
+    if x.ndim != 1:
+        raise ValueError(
+            "High-displacement classification requires a 1D signal."
+        )
+    if len(x) == 0:
+        return QualityCheckResult(enabled=True)
+
+    enabled = bool(np.max(x) <= max_disp_nm)
+    return QualityCheckResult(
+        enabled=enabled,
+        reason=None if enabled else "high_disp",
+    )
 
 
 def classify_outlier_jumps(
@@ -205,13 +239,100 @@ def classify_gradual_onset(
     )
 
 
+def classify_peak_balance(
+    disp_nm: ArrayLike,
+    force_uN: ArrayLike,
+    *,
+    peak_bin_count: int = 48,
+    peak_prominence_fraction: float = 0.05,
+    min_secondary_peak_fraction: float = 0.1,
+    require_two_peaks: bool = False,
+) -> QualityCheckResult:
+    """Classify curves whose second resolved peak is too small.
+
+    The heuristic sorts the force-displacement samples by displacement,
+    averages them onto coarse displacement bins, smooths the coarse force
+    curve, and compares the two strongest resolved peaks.
+
+    If fewer than two prominent peaks are resolved after smoothing, the
+    heuristic abstains by default. Set ``require_two_peaks=True`` to disable
+    runs unless two resolved peaks are present.
+
+    Args:
+        disp_nm: Displacement values from the test section.
+        force_uN: Force values from the test section.
+        peak_bin_count: Number of coarse displacement bins used before peak
+            detection.
+        peak_prominence_fraction: Minimum prominence for resolved peaks,
+            expressed as a fraction of the coarse-force dynamic range.
+        min_secondary_peak_fraction: Minimum allowed ratio between the
+            second-highest and highest resolved peaks.
+        require_two_peaks: When true, disable curves that do not resolve at
+            least two prominent peaks after smoothing.
+
+    Returns:
+        Quality classification result. Curves with an undersized second peak,
+        or without two resolved peaks when ``require_two_peaks`` is true, are
+        marked with reason `weak_second_peak`.
+    """
+
+    x = np.asarray(disp_nm, dtype=np.float64)
+    y = np.asarray(force_uN, dtype=np.float64)
+    if x.shape != y.shape:
+        raise ValueError("disp_nm and force_uN must have the same shape.")
+    if x.ndim != 1:
+        raise ValueError("Peak-balance classification requires 1D signals.")
+    if len(x) == 0:
+        return QualityCheckResult(enabled=True)
+
+    _, _, coarse_force = _coarse_force_curve(x, y, bin_count=peak_bin_count)
+    if coarse_force.size < 5:
+        return QualityCheckResult(enabled=True)
+
+    smoothed_force = savgol(coarse_force, window_length=7, polyorder=1)
+    dynamic_range = float(np.ptp(smoothed_force))
+    if dynamic_range <= 0.0:
+        return QualityCheckResult(enabled=True)
+
+    baseline = float(np.min(smoothed_force))
+    prominence = max(dynamic_range * peak_prominence_fraction, 1.0)
+    peak_indices, _ = find_peaks(
+        smoothed_force,
+        prominence=prominence,
+        distance=max(len(smoothed_force) // 8, 1),
+    )
+    if len(peak_indices) < 2:
+        if require_two_peaks:
+            return QualityCheckResult(enabled=False, reason="weak_second_peak")
+        return QualityCheckResult(enabled=True)
+
+    peak_heights = sorted(
+        (float(smoothed_force[index] - baseline) for index in peak_indices),
+        reverse=True,
+    )
+    if peak_heights[0] <= 0.0:
+        return QualityCheckResult(enabled=True)
+
+    secondary_peak_fraction = peak_heights[1] / peak_heights[0]
+    enabled = secondary_peak_fraction >= min_secondary_peak_fraction
+    return QualityCheckResult(
+        enabled=enabled,
+        reason=None if enabled else "weak_second_peak",
+    )
+
+
 def classify_quality(
     disp_nm: ArrayLike,
     force_uN: ArrayLike,
     *,
     min_robust_force_span_uN: float = 200.0,
-    low_quantile: float = 0.05,
-    high_quantile: float = 0.95,
+    low_quantile: float = 0.40,
+    high_quantile: float = 0.999,
+    max_disp_nm: float = 1000.0,
+    peak_bin_count: int = 48,
+    peak_prominence_fraction: float = 0.05,
+    min_secondary_peak_fraction: float = 0.1,
+    require_two_peaks: bool = False,
     disp_z_threshold: float = 100.0,
     force_z_threshold: float = 70.0,
     bin_count: int = 24,
@@ -230,6 +351,16 @@ def classify_quality(
             flat-force check.
         low_quantile: Lower quantile used for the robust force span.
         high_quantile: Upper quantile used for the robust force span.
+        max_disp_nm: Maximum allowed displacement before disabling the
+            experiment.
+        peak_bin_count: Number of coarse displacement bins used for the
+            peak-balance heuristic.
+        peak_prominence_fraction: Minimum prominence used to resolve peaks,
+            relative to the coarse-force dynamic range.
+        min_secondary_peak_fraction: Minimum allowed ratio between the
+            second-highest and highest resolved peaks.
+        require_two_peaks: When true, disable curves that do not resolve at
+            least two peaks after smoothing.
         disp_z_threshold: Robust z-score threshold for isolated displacement
             spikes.
         force_z_threshold: Robust z-score threshold for isolated force spikes.
@@ -267,7 +398,13 @@ def classify_quality(
     if not outlier_result.enabled:
         return outlier_result
 
-    return classify_gradual_onset(
+    high_disp_result = classify_high_displacement(
+        disp_nm, max_disp_nm=max_disp_nm
+    )
+    if not high_disp_result.enabled:
+        return high_disp_result
+
+    gradual_onset_result = classify_gradual_onset(
         disp_nm,
         force_uN,
         bin_count=bin_count,
@@ -276,6 +413,17 @@ def classify_quality(
         target_force_fraction=target_force_fraction,
         sustained_bins=sustained_bins,
         max_rise_width_fraction=max_rise_width_fraction,
+    )
+    if not gradual_onset_result.enabled:
+        return gradual_onset_result
+
+    return classify_peak_balance(
+        disp_nm,
+        force_uN,
+        peak_bin_count=peak_bin_count,
+        peak_prominence_fraction=peak_prominence_fraction,
+        min_secondary_peak_fraction=min_secondary_peak_fraction,
+        require_two_peaks=require_two_peaks,
     )
 
 

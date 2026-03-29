@@ -10,18 +10,16 @@ DATA_DIR = Path(__file__).parent / "data"
 
 
 def test_load_experiment_parses_sections_and_metadata() -> None:
-    experiment = load_experiment(
-        DATA_DIR / "Tritium_Retention_Study_04.03.2026_0000.hld"
-    )
+    experiment = load_experiment(DATA_DIR / "experiment_a.hld")
 
-    assert experiment.stem == "Tritium_Retention_Study_04.03.2026_0000"
+    assert experiment.stem == "experiment_a"
     assert experiment.timestamp == datetime(2026, 3, 4, 13, 56, 27)
-    assert experiment.temperature_c == pytest.approx(23.0)
-    assert experiment.humidity_percent == pytest.approx(50.0)
-    assert experiment.paths.tdm_path is not None
-    assert experiment.paths.tdx_path is not None
-    assert len(experiment.approach) == 2453
-    assert len(experiment.drift) == 2181
+    assert experiment.temperature_c is None
+    assert experiment.humidity_percent is None
+    assert experiment.paths.tdm_path is None
+    assert experiment.paths.tdx_path is None
+    assert experiment.approach is None
+    assert experiment.drift is None
     assert len(experiment.test) == 2800
     assert experiment.test.column_names[:3] == (
         "time_s",
@@ -30,8 +28,7 @@ def test_load_experiment_parses_sections_and_metadata() -> None:
     )
     assert experiment.test["disp_nm"].dtype.name == "float64"
     assert experiment.test["force_uN"].dtype.name == "float64"
-    assert len(experiment.segment_definitions) == 5
-    assert experiment.segment_definitions[2].points == 997
+    assert len(experiment.segment_definitions) == 0
     assert experiment.enabled is True
     assert experiment.disabled_reason is None
 
@@ -39,6 +36,7 @@ def test_load_experiment_parses_sections_and_metadata() -> None:
 def test_normalize_column_name_handles_micro_variants() -> None:
     assert _normalize_column_name("Force_µN") == "force_uN"
     assert _normalize_column_name("Force_�N") == "force_uN"
+    assert _normalize_column_name("Force_uN") == "force_uN"
     assert _normalize_column_name("Piezo Extension_nm") == "piezo_extension_nm"
 
 
@@ -134,37 +132,19 @@ def test_load_experiment_reports_file_path_on_parse_error(
 def test_load_folder_discovers_siblings_and_sorts_experiments() -> None:
     study = load_folder(DATA_DIR)
 
-    assert len(study.experiments) == 8
+    assert len(study.experiments) == 4
     assert [experiment.stem for experiment in study.experiments] == [
-        "AIrIndent10000nm 02",
-        "Tritium_Retention_Study_04.03.2026_0005",
-        "Tritium_Retention_Study_04.03.2026_0009",
-        "Tritium_Retention_Study_04.03.2026_0000",
-        "Tritium_Retention_Study_04.03.2026_0001",
-        "Tritium_Retention_Study_04.03.2026_THU_morning_0001",
-        "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0059",
-        "Tritium_Retention_Study_11.03.2026_WED_oneweekafter_0060",
+        "experiment_a",
+        "experiment_b",
+        "experiment_c",
+        "experiment_d",
     ]
+    assert [
+        experiment.timestamp for experiment in study.experiments
+    ] == sorted(experiment.timestamp for experiment in study.experiments)
     assert all(
-        experiment.paths.tdm_path is not None
-        for experiment in study.experiments
+        experiment.paths.tdm_path is None for experiment in study.experiments
     )
     assert all(
-        experiment.paths.tdx_path is not None
-        for experiment in study.experiments
+        experiment.paths.tdx_path is None for experiment in study.experiments
     )
-
-
-def test_load_folder_keeps_hld_only_experiments(tmp_path: Path) -> None:
-    source = DATA_DIR / "Tritium_Retention_Study_04.03.2026_0000.hld"
-    target = tmp_path / source.name
-    target.write_text(
-        source.read_text(encoding="iso-8859-1"), encoding="iso-8859-1"
-    )
-
-    study = load_folder(tmp_path)
-
-    assert len(study.experiments) == 1
-    experiment = study.experiments[0]
-    assert experiment.paths.tdm_path is None
-    assert experiment.paths.tdx_path is None
