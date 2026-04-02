@@ -1,7 +1,10 @@
 from dataclasses import replace
 from datetime import datetime, timedelta
 
-import pytest
+import numpy as np
+
+from nanodent.models import SignalTable
+from nanodent.study import Study
 
 EXPERIMENT_A = "experiment_a"
 EXPERIMENT_B = "experiment_b"
@@ -100,11 +103,16 @@ def test_analyze_oliver_pharr_skips_disabled_experiments_by_default(
 ) -> None:
     study = base_study.disable_experiments(EXPERIMENT_A)
 
-    result = study.analyze_oliver_pharr()
+    analyzed = study.analyze_oliver_pharr()
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
+    }
 
-    assert len(result) == len(study) - 1
-    with pytest.raises(KeyError, match=EXPERIMENT_A):
-        result.by_stem(EXPERIMENT_A)
+    assert analyzed is not study
+    assert by_stem[EXPERIMENT_A].oliver_pharr is None
+    assert by_stem[EXPERIMENT_B].oliver_pharr is not None
+    assert by_stem[EXPERIMENT_C].oliver_pharr is not None
+    assert by_stem[EXPERIMENT_D].oliver_pharr is not None
 
 
 def test_analyze_oliver_pharr_can_include_disabled_experiments(
@@ -112,29 +120,49 @@ def test_analyze_oliver_pharr_can_include_disabled_experiments(
 ) -> None:
     study = base_study.disable_experiments(EXPERIMENT_A)
 
-    result = study.analyze_oliver_pharr(include_disabled=True)
-
-    assert len(result) == len(study)
-    assert result.by_stem(EXPERIMENT_A).stem == EXPERIMENT_A
-
-
-def test_analyze_oliver_pharr_summary_returns_query_rows(base_study) -> None:
-    study = base_study.disable_experiments(EXPERIMENT_A)
-
-    result = study.analyze_oliver_pharr()
-    first_row = result.summary()[0]
-
-    assert set(first_row) == {
-        "stem",
-        "success",
-        "reason",
-        "peak_index",
-        "peak_force_uN",
-        "peak_disp_nm",
-        "stiffness_uN_per_nm",
-        "force_intercept_uN",
-        "depth_intercept_nm",
-        "r_squared",
-        "fit_point_count",
+    analyzed = study.analyze_oliver_pharr(include_disabled=True)
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
     }
-    assert first_row["stem"] in {EXPERIMENT_B, EXPERIMENT_C, EXPERIMENT_D}
+
+    assert len(analyzed.experiments) == len(study.experiments)
+    assert by_stem[EXPERIMENT_A].oliver_pharr is not None
+    assert by_stem[EXPERIMENT_A].oliver_pharr.stem == EXPERIMENT_A
+
+
+def test_analyze_oliver_pharr_attaches_unsuccessful_results(
+    base_study,
+) -> None:
+    short_test = SignalTable(
+        columns={
+            "time_s": np.array([0.0, 1.0, 2.0, 3.0], dtype=np.float64),
+            "disp_nm": np.array([0.0, 1.0, 2.0, 1.5], dtype=np.float64),
+            "force_uN": np.array([0.0, 1.0, 2.0, 1.0], dtype=np.float64),
+        },
+        point_count=4,
+        raw_columns=("Time_s", "Disp_nm", "Force_uN"),
+    )
+    experiment = replace(base_study.experiments[0], test=short_test)
+    analyzed = Study(experiments=(experiment,)).analyze_oliver_pharr()
+    analyzed_experiment = analyzed.experiments[0]
+
+    assert analyzed_experiment.oliver_pharr is not None
+    assert analyzed_experiment.oliver_pharr.success is False
+    assert (
+        analyzed_experiment.oliver_pharr.reason == "too_few_unloading_points"
+    )
+    assert analyzed_experiment.oliver_pharr.stem == EXPERIMENT_A
+
+
+def test_analyze_oliver_pharr_clears_existing_results_for_unselected_runs(
+    base_study,
+) -> None:
+    once = base_study.analyze_oliver_pharr(include_disabled=True)
+    disabled = once.disable_experiments(EXPERIMENT_A)
+    analyzed = disabled.analyze_oliver_pharr(include_disabled=False)
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
+    }
+
+    assert by_stem[EXPERIMENT_A].enabled is False
+    assert by_stem[EXPERIMENT_A].oliver_pharr is None

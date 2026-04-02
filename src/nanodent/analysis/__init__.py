@@ -2,7 +2,6 @@
 
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.oliver_pharr import (
-    OliverPharrBatchResult,
     OliverPharrExperimentResult,
     analyze_oliver_pharr,
 )
@@ -17,7 +16,6 @@ from nanodent.analysis.quality import (
 )
 
 __all__ = [
-    "OliverPharrBatchResult",
     "OliverPharrExperimentResult",
     "QualityCheckResult",
     "analyze_oliver_pharr",

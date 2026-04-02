@@ -3,10 +3,13 @@
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from nanodent.analysis.oliver_pharr import OliverPharrExperimentResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +118,7 @@ class Experiment:
     segment_definitions: tuple[SegmentDefinition, ...] = ()
     enabled: bool = True
     disabled_reason: str | None = None
+    oliver_pharr: "OliverPharrExperimentResult | None" = None
 
     @property
     def stem(self) -> str:
@@ -190,3 +194,10 @@ class Experiment:
             enabled=enabled,
             disabled_reason=None if enabled else reason,
         )
+
+    def with_oliver_pharr(
+        self, result: "OliverPharrExperimentResult | None"
+    ) -> "Experiment":
+        """Return a copy of the experiment with updated analysis results."""
+
+        return replace(self, oliver_pharr=result)

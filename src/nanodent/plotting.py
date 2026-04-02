@@ -13,7 +13,6 @@ from matplotlib.figure import Figure
 from numpy.typing import NDArray
 
 from nanodent.analysis.filters import savgol
-from nanodent.analysis.oliver_pharr import OliverPharrBatchResult
 from nanodent.models import Experiment
 from nanodent.study import ExperimentGroup, Study
 
@@ -110,7 +109,7 @@ def plot_experiments(
     cmap: str = "viridis",
     max_gap: timedelta = timedelta(minutes=30),
     selection: Literal["enabled", "disabled", "both"] = "enabled",
-    oliver_pharr: OliverPharrBatchResult | None = None,
+    show_oliver_pharr: bool = True,
     fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
 ) -> Axes:
@@ -119,15 +118,9 @@ def plot_experiments(
     experiments = _coerce_experiments(
         target, max_gap=max_gap, selection=selection
     )
-    fit_lookup = _oliver_pharr_lookup(oliver_pharr)
     use_force_displacement = (
         section == "test" and x == "disp_nm" and y == "force_uN"
     )
-    if oliver_pharr is not None and not use_force_displacement:
-        raise ValueError(
-            "Oliver-Pharr overlays are only supported for test-section "
-            "force-displacement plots."
-        )
 
     color_map = plt.get_cmap(cmap, max(len(experiments), 1))
     for index, experiment in enumerate(experiments):
@@ -147,7 +140,11 @@ def plot_experiments(
             **curve_kwargs,
         )
 
-        fit_result = fit_lookup.get(experiment.stem)
+        fit_result = (
+            experiment.oliver_pharr
+            if show_oliver_pharr and use_force_displacement
+            else None
+        )
         if fit_result is None or not fit_result.success:
             continue
         if len(fit_result.x_fit) == 0 or len(fit_result.y_fit) == 0:
@@ -177,7 +174,7 @@ def save_experiment_plots(
     smoothing: Mapping[str, Any] | None = None,
     max_gap: timedelta = timedelta(minutes=30),
     selection: Literal["enabled", "disabled", "both"] = "enabled",
-    oliver_pharr: OliverPharrBatchResult | None = None,
+    show_oliver_pharr: bool = True,
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] | None = None,
     image_format: str = "png",
@@ -207,7 +204,7 @@ def save_experiment_plots(
             smoothing=smoothing,
             max_gap=max_gap,
             selection="both",
-            oliver_pharr=oliver_pharr,
+            show_oliver_pharr=show_oliver_pharr,
             fit_kwargs=fit_kwargs,
             **line_kwargs,
         )
@@ -263,16 +260,6 @@ def _prepare_curve(
         x_values = savgol(x_values, **smoothing_kwargs)
         y_values = savgol(y_values, **smoothing_kwargs)
     return _PreparedCurve(x_values=x_values, y_values=y_values)
-
-
-def _oliver_pharr_lookup(
-    oliver_pharr: OliverPharrBatchResult | None,
-) -> dict[str, Any]:
-    """Return per-stem Oliver-Pharr results for plotting overlays."""
-
-    if oliver_pharr is None:
-        return {}
-    return {result.stem: result for result in oliver_pharr.results}
 
 
 def _coerce_experiments(

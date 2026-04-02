@@ -6,9 +6,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from nanodent.analysis.oliver_pharr import (
-    OliverPharrBatchResult,
-)
-from nanodent.analysis.oliver_pharr import (
     analyze_oliver_pharr as _analyze_oliver_pharr,
 )
 from nanodent.analysis.quality import classify_quality as _classify_quality
@@ -306,7 +303,7 @@ class Study:
         fit_num_points: int = 2,
         use_force_peak: bool = True,
         include_disabled: bool = False,
-    ) -> OliverPharrBatchResult:
+    ) -> "Study":
         """Analyze selected experiments with a straight-line unloading fit.
 
         Args:
@@ -320,31 +317,33 @@ class Study:
                 alongside enabled ones.
 
         Returns:
-            Immutable batch result with one per-experiment Oliver-Pharr fit
-            result for every selected experiment.
+            New study with per-experiment Oliver-Pharr fit results attached
+            to selected experiments.
         """
 
-        results = tuple(
-            _analyze_oliver_pharr(
-                experiment.section("test")["disp_nm"],
-                experiment.section("test")["force_uN"],
-                unloading_fraction=unloading_fraction,
-                smoothing=smoothing,
-                fit_num_points=fit_num_points,
-                use_force_peak=use_force_peak,
-                stem=experiment.stem,
-            )
+        analyzed_stems = {
+            experiment.stem
             for experiment in self._selected_experiments(
                 include_disabled=include_disabled
             )
+        }
+        experiments = tuple(
+            experiment.with_oliver_pharr(
+                _analyze_oliver_pharr(
+                    experiment.section("test")["disp_nm"],
+                    experiment.section("test")["force_uN"],
+                    unloading_fraction=unloading_fraction,
+                    smoothing=smoothing,
+                    fit_num_points=fit_num_points,
+                    use_force_peak=use_force_peak,
+                    stem=experiment.stem,
+                )
+                if experiment.stem in analyzed_stems
+                else None
+            )
+            for experiment in self.experiments
         )
-        return OliverPharrBatchResult(
-            study=self,
-            results=results,
-            unloading_fraction=unloading_fraction,
-            smoothing=None if smoothing is None else dict(smoothing),
-            fit_num_points=fit_num_points,
-        )
+        return Study(experiments=experiments)
 
     def set_enabled(
         self,

@@ -1,18 +1,15 @@
 """Oliver-Pharr-style unloading analysis helpers."""
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import curve_fit
 
 from nanodent.analysis.filters import savgol
-
-if TYPE_CHECKING:
-    from nanodent.study import Study
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,46 +54,6 @@ class OliverPharrExperimentResult:
             "r_squared": self.r_squared,
             "fit_point_count": self.fit_point_count,
         }
-
-
-@dataclass(frozen=True, slots=True)
-class OliverPharrBatchResult:
-    """Immutable batch container for per-experiment Oliver-Pharr results."""
-
-    study: "Study"
-    results: tuple[OliverPharrExperimentResult, ...]
-    unloading_fraction: float
-    smoothing: Mapping[str, Any] | None = None
-    fit_num_points: int = 200
-
-    def __post_init__(self) -> None:
-        """Freeze optional batch-level smoothing settings."""
-
-        object.__setattr__(self, "results", tuple(self.results))
-        object.__setattr__(self, "smoothing", _freeze_mapping(self.smoothing))
-
-    def __len__(self) -> int:
-        """Return the number of analyzed experiments."""
-
-        return len(self.results)
-
-    def __iter__(self) -> Iterator[OliverPharrExperimentResult]:
-        """Iterate over per-experiment results in study order."""
-
-        return iter(self.results)
-
-    def by_stem(self, stem: str) -> OliverPharrExperimentResult:
-        """Return the result for one experiment stem."""
-
-        for result in self.results:
-            if result.stem == stem:
-                return result
-        raise KeyError(f"No Oliver-Pharr result for stem {stem!r}.")
-
-    def summary(self) -> list[dict[str, Any]]:
-        """Return compact rows suitable for notebook inspection."""
-
-        return [result.summary() for result in self.results]
 
 
 def analyze_oliver_pharr(

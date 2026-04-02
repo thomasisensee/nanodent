@@ -1,6 +1,6 @@
 # nanodent
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/thomasisensee/nanodent/ci.yml?branch=main)](https://github.com/thomasisensee/nanodent/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/github/thomasisensee/nanodent/graph/badge.svg?token=DRJB38CIZI)](https://codecov.io/github/thomasisensee/nanodent)
 ![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12%20|%203.13%20|%203.14-blue)
@@ -47,6 +47,7 @@ from nanodent import (
 
 study = load_folder("path/to/experiment-folder")
 filtered_study = study.classify_quality()
+filtered_study = filtered_study.analyze_oliver_pharr()
 summaries = filtered_study.describe_groups()
 
 timeline_fig, timeline_ax = plot_group_timeline(
@@ -54,16 +55,19 @@ timeline_fig, timeline_ax = plot_group_timeline(
     max_gap=timedelta(minutes=30),
 )
 
-groups = filtered_study.group_by_time_gap()
-fig, axes = plot_groups(
-    groups,
+fig, ax = plt.subplots()
+nanodent.plot_experiments(
+    ax,
+    filtered_study,
+    oliver_pharr=op_result,
+    fit_kwargs={"color": "gray", "linestyle": "solid", "linewidth": "2"},
     x="disp_nm",
     y="force_uN",
-    cmap="viridis",
-    alignment={"method": "force_threshold", "force_threshold": 10.0},
-    show_slope=True,
-    xlim=(0.0, 1500.0),
+    cmap="rainbow",
 )
+
+ax.set_xlabel("Displacement h / nm")
+ax.set_ylabel("Force P / μN")
 
 saved = save_experiment_plots(filtered_study, "plots/")
 ```
@@ -81,15 +85,12 @@ The public API also exposes:
 
 - `load_experiment(path) -> Experiment`
 - `load_folder(path) -> Study`
+- `Study.analyze_oliver_pharr(...) -> Study`
 - `Study.group_by_time_gap(...) -> list[ExperimentGroup]`
 - `Study.describe_groups(...) -> list[dict[str, Any]]`
 - `plot_group_timeline(...) -> tuple[Figure, Axes]`
-- `plot_groups(...) -> tuple[Figure, Axes | ndarray]`
+- `plot_experiments(...) -> Axes`
 - `save_experiment_plots(...) -> list[Path]`
-
-Signal processing stays NumPy-first and separate from the data objects:
-`nanodent.savgol`, `nanodent.gradient`, `nanodent.align_curve`, and
-`nanodent.curve_fit_model`.
 
 ## Acknowledgments
 

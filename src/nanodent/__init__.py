@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.oliver_pharr import (
-    OliverPharrBatchResult,
     OliverPharrExperimentResult,
     analyze_oliver_pharr,
 )
@@ -42,7 +41,6 @@ __all__ = [
     "Experiment",
     "ExperimentGroup",
     "ExperimentPaths",
-    "OliverPharrBatchResult",
     "OliverPharrExperimentResult",
     "QualityCheckResult",
     "MetadataEntry",
