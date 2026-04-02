@@ -32,6 +32,7 @@ def test_load_experiment_parses_sections_and_metadata() -> None:
     assert experiment.enabled is True
     assert experiment.disabled_reason is None
     assert experiment.onset is None
+    assert experiment.force_peaks is None
     assert experiment.oliver_pharr is None
 
 

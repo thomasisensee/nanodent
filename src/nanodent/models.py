@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from nanodent.analysis.force_peaks import ForcePeakDetectionResult
     from nanodent.analysis.oliver_pharr import OliverPharrExperimentResult
     from nanodent.analysis.onset import OnsetDetectionResult
 
@@ -120,6 +121,7 @@ class Experiment:
     enabled: bool = True
     disabled_reason: str | None = None
     onset: "OnsetDetectionResult | None" = None
+    force_peaks: "ForcePeakDetectionResult | None" = None
     oliver_pharr: "OliverPharrExperimentResult | None" = None
 
     @property
@@ -210,3 +212,10 @@ class Experiment:
         """Return a copy of the experiment with updated onset results."""
 
         return replace(self, onset=result)
+
+    def with_force_peaks(
+        self, result: "ForcePeakDetectionResult | None"
+    ) -> "Experiment":
+        """Return a copy of the experiment with updated force peaks."""
+
+        return replace(self, force_peaks=result)

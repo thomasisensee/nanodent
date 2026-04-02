@@ -4,6 +4,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from nanodent.analysis.force_peaks import detect_force_peaks
 from nanodent.analysis.oliver_pharr import analyze_oliver_pharr
 from nanodent.analysis.onset import detect_onset
 from nanodent.models import Experiment, ExperimentPaths, SignalTable
@@ -47,7 +48,7 @@ def _make_experiment() -> Experiment:
             disp, force, unloading_fraction=0.25, stem="synthetic"
         )
     )
-    return experiment.with_onset(
+    experiment = experiment.with_onset(
         detect_onset(
             force,
             time_s=time,
@@ -55,6 +56,15 @@ def _make_experiment() -> Experiment:
             baseline_points=20,
             k=1.0,
             consecutive=3,
+        )
+    )
+    return experiment.with_force_peaks(
+        detect_force_peaks(
+            force,
+            time_s=time,
+            disp_nm=disp,
+            prominence=10.0,
+            threshold=1.0,
         )
     )
 
@@ -111,13 +121,27 @@ def test_saved_plot_decoration_adds_top_axis_and_stiffness_title() -> None:
     top_ax = figure.axes[1]
     top_tick_labels = [tick.get_text() for tick in top_ax.get_xticklabels()]
     top_tick_positions = list(top_ax.get_xticks())
-    expected_onset_label = f"{float(experiment.onset.onset_disp_nm):.3g}"
-    expected_max_label = f"{
+    raw_positions = [float(experiment.onset.onset_disp_nm)]
+    raw_positions.extend(
+        float(peak.disp_nm) for peak in experiment.force_peaks.peaks
+    )
+    raw_positions.append(
         float(
-            experiment.test['disp_nm'][np.argmax(experiment.test['force_uN'])]
-        ):.3g}"
-    assert len(top_tick_positions) == 2
-    assert top_tick_labels == [expected_onset_label, expected_max_label]
+            experiment.test["disp_nm"][np.argmax(experiment.test["force_uN"])]
+        )
+    )
+    expected_positions: list[float] = []
+    for position in sorted(raw_positions):
+        if any(
+            np.isclose(position, existing, atol=1e-12)
+            for existing in expected_positions
+        ):
+            continue
+        expected_positions.append(position)
+    expected_labels = [f"{position:.3g}" for position in expected_positions]
+
+    assert top_tick_positions == expected_positions
+    assert top_tick_labels == expected_labels
     plt.close(figure)
 
 

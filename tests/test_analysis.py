@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from nanodent.analysis.filters import savgol
+from nanodent.analysis.force_peaks import detect_force_peaks
 from nanodent.analysis.oliver_pharr import analyze_oliver_pharr
 from nanodent.analysis.onset import detect_onset
 from nanodent.analysis.quality import (
@@ -35,6 +36,14 @@ def _make_spiky_peak_curve() -> tuple[np.ndarray, np.ndarray]:
     disp[70] += 4.0
     force[70] += 25.0
     return disp, force
+
+
+def _make_two_peak_signal() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    time = np.arange(0.0, 120.0, 1.0, dtype=np.float64)
+    disp = np.linspace(0.0, 119.0, len(time), dtype=np.float64)
+    force = 5.0 + 150.0 * np.exp(-(((time - 30.0) / 4.0) ** 2))
+    force += 220.0 * np.exp(-(((time - 80.0) / 6.0) ** 2))
+    return time, disp, force
 
 
 def test_savgol_preserves_shape_and_reduces_noise() -> None:
@@ -149,6 +158,77 @@ def test_detect_onset_validates_detection_parameters() -> None:
 
     with pytest.raises(ValueError, match="disp_nm"):
         detect_onset(force, disp_nm=np.arange(19, dtype=np.float64))
+
+
+def test_detect_force_peaks_detects_two_peaks_with_coordinates() -> None:
+    time, disp, force = _make_two_peak_signal()
+
+    result = detect_force_peaks(
+        force,
+        time_s=time,
+        disp_nm=disp,
+        prominence=100.0,
+        threshold=1.0,
+    )
+
+    assert result.success is True
+    assert result.reason is None
+    assert result.peak_count == 2
+    assert len(result.peaks) == 2
+    assert result.peaks[0].index < result.peaks[1].index
+    assert result.peaks[0].time_s == pytest.approx(time[result.peaks[0].index])
+    assert result.peaks[0].disp_nm == pytest.approx(
+        disp[result.peaks[0].index]
+    )
+    assert result.peaks[1].time_s == pytest.approx(time[result.peaks[1].index])
+    assert result.peaks[1].disp_nm == pytest.approx(
+        disp[result.peaks[1].index]
+    )
+
+
+def test_detect_force_peaks_returns_unsuccessful_result_without_peaks() -> (
+    None
+):
+    force = np.linspace(0.0, 1.0, 30, dtype=np.float64)
+
+    result = detect_force_peaks(force, prominence=100.0, threshold=1.0)
+
+    assert result.success is False
+    assert result.reason == "no_force_peaks_detected"
+    assert result.peaks == ()
+    assert result.peak_count == 0
+
+
+def test_detect_force_peaks_keeps_two_strongest_peaks_in_index_order() -> None:
+    time = np.arange(0.0, 150.0, 1.0, dtype=np.float64)
+    disp = np.linspace(0.0, 149.0, len(time), dtype=np.float64)
+    force = 3.0
+    force += 110.0 * np.exp(-(((time - 20.0) / 3.0) ** 2))
+    force += 260.0 * np.exp(-(((time - 60.0) / 4.0) ** 2))
+    force += 180.0 * np.exp(-(((time - 110.0) / 5.0) ** 2))
+
+    result = detect_force_peaks(
+        force,
+        time_s=time,
+        disp_nm=disp,
+        prominence=100.0,
+        threshold=1.0,
+    )
+
+    peak_indices = tuple(peak.index for peak in result.peaks)
+    assert result.success is True
+    assert result.peak_count == 2
+    assert peak_indices == (60, 110)
+
+
+def test_detect_force_peaks_validates_aligned_inputs() -> None:
+    force = np.linspace(0.0, 1.0, 20, dtype=np.float64)
+
+    with pytest.raises(ValueError, match="time_s"):
+        detect_force_peaks(force, time_s=np.arange(19, dtype=np.float64))
+
+    with pytest.raises(ValueError, match="disp_nm"):
+        detect_force_peaks(force, disp_nm=np.arange(19, dtype=np.float64))
 
 
 def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:

@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
+from nanodent.analysis.force_peaks import (
+    detect_force_peaks as _detect_force_peaks,
+)
 from nanodent.analysis.oliver_pharr import (
     analyze_oliver_pharr as _analyze_oliver_pharr,
 )
@@ -390,6 +393,48 @@ class Study:
                     k=k,
                     consecutive=consecutive,
                     smoothing=smoothing,
+                )
+                if experiment.stem in analyzed_stems
+                else None
+            )
+            for experiment in self.experiments
+        )
+        return Study(experiments=experiments)
+
+    def detect_force_peaks(
+        self,
+        *,
+        prominence: float = 100.0,
+        threshold: float | None = 1.0,
+        include_disabled: bool = False,
+    ) -> "Study":
+        """Detect raw-force peaks on selected experiments.
+
+        Args:
+            prominence: Minimum peak prominence passed to `find_peaks`.
+            threshold: Minimum peak threshold passed to `find_peaks`.
+            include_disabled: Whether disabled experiments should be analyzed
+                alongside enabled ones.
+
+        Returns:
+            New study with per-experiment force peak results attached to
+            selected experiments.
+        """
+
+        analyzed_stems = {
+            experiment.stem
+            for experiment in self._selected_experiments(
+                include_disabled=include_disabled
+            )
+        }
+        experiments = tuple(
+            experiment.with_force_peaks(
+                _detect_force_peaks(
+                    experiment.section("test")["force_uN"],
+                    time_s=experiment.section("test")["time_s"],
+                    disp_nm=experiment.section("test")["disp_nm"],
+                    prominence=prominence,
+                    threshold=threshold,
                 )
                 if experiment.stem in analyzed_stems
                 else None

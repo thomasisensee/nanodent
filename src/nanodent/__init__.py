@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nanodent.analysis.filters import savgol
+from nanodent.analysis.force_peaks import (
+    ForcePeakDetectionResult,
+    ForcePeakPosition,
+    detect_force_peaks,
+)
 from nanodent.analysis.oliver_pharr import (
     OliverPharrExperimentResult,
     analyze_oliver_pharr,
@@ -42,6 +47,8 @@ __all__ = [
     "Experiment",
     "ExperimentGroup",
     "ExperimentPaths",
+    "ForcePeakDetectionResult",
+    "ForcePeakPosition",
     "OnsetDetectionResult",
     "OliverPharrExperimentResult",
     "QualityCheckResult",
@@ -50,6 +57,7 @@ __all__ = [
     "SignalTable",
     "Study",
     "__version__",
+    "detect_force_peaks",
     "detect_onset",
     "analyze_oliver_pharr",
     "classify_gradual_onset",

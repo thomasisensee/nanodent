@@ -256,3 +256,90 @@ def test_detect_onset_clears_existing_results_for_unselected_runs(
 
     assert by_stem[EXPERIMENT_A].enabled is False
     assert by_stem[EXPERIMENT_A].onset is None
+
+
+def test_detect_force_peaks_skips_disabled_experiments_by_default(
+    base_study,
+) -> None:
+    study = base_study.disable_experiments(EXPERIMENT_A)
+
+    analyzed = study.detect_force_peaks()
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
+    }
+
+    assert analyzed is not study
+    assert by_stem[EXPERIMENT_A].force_peaks is None
+    assert by_stem[EXPERIMENT_B].force_peaks is not None
+    assert by_stem[EXPERIMENT_C].force_peaks is not None
+    assert by_stem[EXPERIMENT_D].force_peaks is not None
+
+
+def test_detect_force_peaks_can_include_disabled_experiments(
+    base_study,
+) -> None:
+    study = base_study.disable_experiments(EXPERIMENT_A)
+
+    analyzed = study.detect_force_peaks(include_disabled=True)
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
+    }
+
+    assert len(analyzed.experiments) == len(study.experiments)
+    assert by_stem[EXPERIMENT_A].force_peaks is not None
+
+
+def test_detect_force_peaks_attaches_unsuccessful_results(base_study) -> None:
+    flat_test = SignalTable(
+        columns={
+            "time_s": np.arange(8, dtype=np.float64),
+            "disp_nm": np.linspace(0.0, 7.0, 8, dtype=np.float64),
+            "force_uN": np.zeros(8, dtype=np.float64),
+        },
+        point_count=8,
+        raw_columns=("Time_s", "Disp_nm", "Force_uN"),
+    )
+    experiment = replace(base_study.experiments[0], test=flat_test)
+
+    analyzed = Study(experiments=(experiment,)).detect_force_peaks()
+    detected = analyzed.experiments[0].force_peaks
+
+    assert detected is not None
+    assert detected.success is False
+    assert detected.reason == "no_force_peaks_detected"
+    assert detected.peaks == ()
+
+
+def test_detect_force_peaks_attaches_time_and_displacement_values(
+    base_study,
+) -> None:
+    experiment = base_study.experiments[0]
+    analyzed = Study(experiments=(experiment,)).detect_force_peaks(
+        prominence=50.0,
+        threshold=1.0,
+    )
+    detected = analyzed.experiments[0].force_peaks
+
+    assert detected is not None
+    if detected.success:
+        for peak in detected.peaks:
+            assert peak.time_s == pytest.approx(
+                experiment.test["time_s"][peak.index]
+            )
+            assert peak.disp_nm == pytest.approx(
+                experiment.test["disp_nm"][peak.index]
+            )
+
+
+def test_detect_force_peaks_clears_existing_results_for_unselected_runs(
+    base_study,
+) -> None:
+    once = base_study.detect_force_peaks(include_disabled=True)
+    disabled = once.disable_experiments(EXPERIMENT_A)
+    analyzed = disabled.detect_force_peaks(include_disabled=False)
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
+    }
+
+    assert by_stem[EXPERIMENT_A].enabled is False
+    assert by_stem[EXPERIMENT_A].force_peaks is None

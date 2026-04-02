@@ -328,27 +328,28 @@ def _saved_plot_top_axis_ticks(
 ) -> tuple[list[float], list[str]]:
     """Return displacement positions and labels for saved-plot top ticks."""
 
-    tick_pairs: list[tuple[float, str]] = []
+    tick_positions: list[float] = []
 
     onset = experiment.onset
     if onset is not None and onset.success and onset.onset_disp_nm is not None:
-        tick_pairs.append(
-            (
-                float(onset.onset_disp_nm),
-                _format_disp_tick(onset.onset_disp_nm),
-            )
+        tick_positions.append(float(onset.onset_disp_nm))
+
+    force_peaks = experiment.force_peaks
+    if force_peaks is not None and force_peaks.success:
+        tick_positions.extend(
+            float(peak.disp_nm)
+            for peak in force_peaks.peaks
+            if peak.disp_nm is not None
         )
 
     max_force_disp = _max_force_disp_nm(experiment)
-    if max_force_disp is not None and not any(
-        np.isclose(position, max_force_disp, atol=1e-12)
-        for position, _ in tick_pairs
-    ):
-        tick_pairs.append((max_force_disp, _format_disp_tick(max_force_disp)))
+    if max_force_disp is not None:
+        tick_positions.append(max_force_disp)
 
+    unique_positions = _unique_sorted_tick_positions(tick_positions)
     return (
-        [position for position, _ in tick_pairs],
-        [label for _, label in tick_pairs],
+        unique_positions,
+        [_format_disp_tick(position) for position in unique_positions],
     )
 
 
@@ -367,6 +368,22 @@ def _format_disp_tick(value_nm: float) -> str:
     """Return a compact displacement label for top-axis ticks."""
 
     return f"{float(value_nm):.3g}"
+
+
+def _unique_sorted_tick_positions(
+    positions: list[float], *, atol: float = 1e-12
+) -> list[float]:
+    """Return sorted tick positions with near-duplicates removed."""
+
+    unique_positions: list[float] = []
+    for position in sorted(float(value) for value in positions):
+        if any(
+            np.isclose(position, existing, atol=atol)
+            for existing in unique_positions
+        ):
+            continue
+        unique_positions.append(position)
+    return unique_positions
 
 
 def _oliver_pharr_extension_segment(
