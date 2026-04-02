@@ -9,7 +9,7 @@ build-backend = "hatchling.build"
 name = "nanodent"
 description = "Analysis package for nanoindentation experimental data."
 readme = "README.md"
-maintainers = [
+authors = [
     { name = "Thomas Isensee", email = "thomas.isensee@iwr.uni-heidelberg.de" },
 ]
 version = "0.0.1"
