@@ -145,41 +145,11 @@ def plot_experiments(
             if show_oliver_pharr and use_force_displacement
             else None
         )
-        if fit_result is None or not fit_result.success:
-            continue
-        if len(fit_result.x_fit) == 0 or len(fit_result.y_fit) == 0:
-            continue
-        overlay_kwargs = {
-            "alpha": 0.95,
-            "color": "black",
-            "label": f"{experiment.stem} fit",
-            "linestyle": "--",
-            "linewidth": 2.5,
-            "zorder": 4,
-        }
-        if fit_kwargs is not None:
-            overlay_kwargs.update(dict(fit_kwargs))
-        ax.plot(fit_result.x_fit, fit_result.y_fit, **overlay_kwargs)
-        x0 = (
-            experiment.oliver_pharr.depth_intercept_nm
-            if show_oliver_pharr
-            else None
-        )
-        y0 = (
-            experiment.oliver_pharr.force_intercept_uN
-            + experiment.oliver_pharr.stiffness_uN_per_nm
-            * experiment.oliver_pharr.depth_intercept_nm
-            if show_oliver_pharr
-            else None
-        )
-        x1 = experiment.oliver_pharr.x_fit[0] if show_oliver_pharr else None
-        y1 = experiment.oliver_pharr.y_fit[0] if show_oliver_pharr else None
-        ax.plot(
-            [x0, x1],
-            [y0, y1],
-            color=overlay_kwargs["color"],
-            linestyle=":",
-            linewidth=0.75,
+        _plot_oliver_pharr_overlay(
+            ax,
+            stem=experiment.stem,
+            fit_result=fit_result,
+            fit_kwargs=fit_kwargs,
         )
 
     return ax
@@ -236,6 +206,13 @@ def save_experiment_plots(
             ax.set_xlim(*xlim)
         if ylim is not None:
             ax.set_ylim(*ylim)
+        _decorate_saved_experiment_axes(
+            ax,
+            experiment=experiment,
+            section=section,
+            x=x,
+            y=y,
+        )
         ax.grid(alpha=0.2)
         figure.tight_layout()
 
@@ -248,6 +225,172 @@ def save_experiment_plots(
             plt.close(figure)
 
     return saved_paths
+
+
+def _decorate_saved_experiment_axes(
+    ax: Axes,
+    *,
+    experiment: Experiment,
+    section: str,
+    x: str,
+    y: str,
+) -> None:
+    """Apply saved-plot-only annotations for one experiment axes."""
+
+    ax.set_title(_format_saved_experiment_title(experiment))
+    if not _uses_force_displacement_axes(section=section, x=x, y=y):
+        return
+    _add_saved_plot_top_axis(ax, experiment=experiment)
+
+
+def _plot_oliver_pharr_overlay(
+    ax: Axes,
+    *,
+    stem: str,
+    fit_result: Any,
+    fit_kwargs: Mapping[str, Any] | None,
+) -> None:
+    """Plot the fitted and softly extended Oliver-Pharr lines."""
+
+    if fit_result is None or not fit_result.success:
+        return
+    if len(fit_result.x_fit) == 0 or len(fit_result.y_fit) == 0:
+        return
+
+    overlay_kwargs = {
+        "alpha": 0.95,
+        "color": "black",
+        "label": f"{stem} fit",
+        "linestyle": "--",
+        "linewidth": 2.5,
+        "zorder": 4,
+    }
+    if fit_kwargs is not None:
+        overlay_kwargs.update(dict(fit_kwargs))
+    ax.plot(fit_result.x_fit, fit_result.y_fit, **overlay_kwargs)
+
+    extension_segment = _oliver_pharr_extension_segment(fit_result)
+    if extension_segment is None:
+        return
+
+    x_values, y_values = extension_segment
+    extension_kwargs = {
+        "alpha": min(float(overlay_kwargs.get("alpha", 1.0)) * 0.45, 1.0),
+        "color": overlay_kwargs.get("color", "black"),
+        "linestyle": ":",
+        "linewidth": max(
+            float(overlay_kwargs.get("linewidth", 1.0)) * 0.5, 0.75
+        ),
+        "zorder": max(float(overlay_kwargs.get("zorder", 4)) - 0.1, 0.0),
+        "label": "_nolegend_",
+    }
+    ax.plot(x_values, y_values, **extension_kwargs)
+
+
+def _uses_force_displacement_axes(*, section: str, x: str, y: str) -> bool:
+    """Return whether the axes represent the test force-displacement view."""
+
+    return section == "test" and x == "disp_nm" and y == "force_uN"
+
+
+def _format_saved_experiment_title(experiment: Experiment) -> str:
+    """Return the saved-plot title including stiffness when available."""
+
+    title = experiment.stem
+    fit_result = experiment.oliver_pharr
+    if fit_result is None or not fit_result.success:
+        return title
+    if fit_result.stiffness_uN_per_nm is None:
+        return title
+    stiffness = fit_result.stiffness_uN_per_nm
+    return f"{title} | S={stiffness:.2f} uN/nm"
+
+
+def _add_saved_plot_top_axis(ax: Axes, *, experiment: Experiment) -> None:
+    """Add a top displacement axis marking onset and maximum force."""
+
+    tick_positions, tick_labels = _saved_plot_top_axis_ticks(experiment)
+    if not tick_positions:
+        return
+
+    top_ax = ax.twiny()
+    top_ax.set_xlim(ax.get_xlim())
+    top_ax.set_xticks(tick_positions)
+    top_ax.set_xticklabels(tick_labels)
+    top_ax.xaxis.set_ticks_position("top")
+    top_ax.xaxis.set_label_position("top")
+    top_ax.set_xlabel("")
+    top_ax.grid(False)
+
+
+def _saved_plot_top_axis_ticks(
+    experiment: Experiment,
+) -> tuple[list[float], list[str]]:
+    """Return displacement positions and labels for saved-plot top ticks."""
+
+    tick_pairs: list[tuple[float, str]] = []
+
+    onset = experiment.onset
+    if onset is not None and onset.success and onset.onset_disp_nm is not None:
+        tick_pairs.append(
+            (
+                float(onset.onset_disp_nm),
+                _format_disp_tick(onset.onset_disp_nm),
+            )
+        )
+
+    max_force_disp = _max_force_disp_nm(experiment)
+    if max_force_disp is not None and not any(
+        np.isclose(position, max_force_disp, atol=1e-12)
+        for position, _ in tick_pairs
+    ):
+        tick_pairs.append((max_force_disp, _format_disp_tick(max_force_disp)))
+
+    return (
+        [position for position, _ in tick_pairs],
+        [label for _, label in tick_pairs],
+    )
+
+
+def _max_force_disp_nm(experiment: Experiment) -> float | None:
+    """Return the displacement at the raw maximum-force sample."""
+
+    force = np.asarray(experiment.test["force_uN"], dtype=np.float64)
+    disp = np.asarray(experiment.test["disp_nm"], dtype=np.float64)
+    if len(force) == 0 or len(disp) == 0:
+        return None
+    max_index = int(np.argmax(force))
+    return float(disp[max_index])
+
+
+def _format_disp_tick(value_nm: float) -> str:
+    """Return a compact displacement label for top-axis ticks."""
+
+    return f"{float(value_nm):.3g}"
+
+
+def _oliver_pharr_extension_segment(
+    fit_result: Any,
+) -> tuple[list[float], list[float]] | None:
+    """Return the softened extension segment from intercept to fit start."""
+
+    if fit_result.depth_intercept_nm is None:
+        return None
+    if fit_result.force_intercept_uN is None:
+        return None
+    if fit_result.stiffness_uN_per_nm is None:
+        return None
+    if len(fit_result.x_fit) == 0 or len(fit_result.y_fit) == 0:
+        return None
+
+    start_x = float(fit_result.depth_intercept_nm)
+    start_y = float(
+        fit_result.force_intercept_uN
+        + fit_result.stiffness_uN_per_nm * fit_result.depth_intercept_nm
+    )
+    end_x = float(fit_result.x_fit[0])
+    end_y = float(fit_result.y_fit[0])
+    return [start_x, end_x], [start_y, end_y]
 
 
 class _PreparedCurve:
