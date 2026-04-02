@@ -2,6 +2,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 
 import numpy as np
+import pytest
 
 from nanodent.models import SignalTable
 from nanodent.study import Study
@@ -166,3 +167,92 @@ def test_analyze_oliver_pharr_clears_existing_results_for_unselected_runs(
 
     assert by_stem[EXPERIMENT_A].enabled is False
     assert by_stem[EXPERIMENT_A].oliver_pharr is None
+
+
+def test_detect_onset_skips_disabled_experiments_by_default(
+    base_study,
+) -> None:
+    study = base_study.disable_experiments(EXPERIMENT_A)
+
+    analyzed = study.detect_onset()
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
+    }
+
+    assert analyzed is not study
+    assert by_stem[EXPERIMENT_A].onset is None
+    assert by_stem[EXPERIMENT_B].onset is not None
+    assert by_stem[EXPERIMENT_C].onset is not None
+    assert by_stem[EXPERIMENT_D].onset is not None
+
+
+def test_detect_onset_can_include_disabled_experiments(base_study) -> None:
+    study = base_study.disable_experiments(EXPERIMENT_A)
+
+    analyzed = study.detect_onset(include_disabled=True)
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
+    }
+
+    assert len(analyzed.experiments) == len(study.experiments)
+    assert by_stem[EXPERIMENT_A].onset is not None
+    assert by_stem[EXPERIMENT_A].onset.onset_time_s is not None
+    assert by_stem[EXPERIMENT_A].onset.onset_disp_nm is not None
+
+
+def test_detect_onset_attaches_unsuccessful_results(base_study) -> None:
+    flat_test = SignalTable(
+        columns={
+            "time_s": np.arange(8, dtype=np.float64),
+            "disp_nm": np.linspace(0.0, 7.0, 8, dtype=np.float64),
+            "force_uN": np.zeros(8, dtype=np.float64),
+        },
+        point_count=8,
+        raw_columns=("Time_s", "Disp_nm", "Force_uN"),
+    )
+    experiment = replace(base_study.experiments[0], test=flat_test)
+
+    analyzed = Study(experiments=(experiment,)).detect_onset(
+        baseline_points=4,
+        k=2.0,
+        consecutive=3,
+    )
+    analyzed_experiment = analyzed.experiments[0]
+
+    assert analyzed_experiment.onset is not None
+    assert analyzed_experiment.onset.success is False
+    assert analyzed_experiment.onset.reason == "no_onset_detected"
+    assert analyzed_experiment.onset.onset_time_s is None
+    assert analyzed_experiment.onset.onset_disp_nm is None
+
+
+def test_detect_onset_attaches_time_and_displacement_values(
+    base_study,
+) -> None:
+    experiment = base_study.experiments[0]
+    analyzed = Study(experiments=(experiment,)).detect_onset()
+    onset = analyzed.experiments[0].onset
+
+    assert onset is not None
+    if onset.success:
+        assert onset.onset_index is not None
+        assert onset.onset_time_s == pytest.approx(
+            experiment.test["time_s"][onset.onset_index]
+        )
+        assert onset.onset_disp_nm == pytest.approx(
+            experiment.test["disp_nm"][onset.onset_index]
+        )
+
+
+def test_detect_onset_clears_existing_results_for_unselected_runs(
+    base_study,
+) -> None:
+    once = base_study.detect_onset(include_disabled=True)
+    disabled = once.disable_experiments(EXPERIMENT_A)
+    analyzed = disabled.detect_onset(include_disabled=False)
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
+    }
+
+    assert by_stem[EXPERIMENT_A].enabled is False
+    assert by_stem[EXPERIMENT_A].onset is None

@@ -3,6 +3,7 @@ import pytest
 
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.oliver_pharr import analyze_oliver_pharr
+from nanodent.analysis.onset import detect_onset
 from nanodent.analysis.quality import (
     classify_flat_force,
     classify_gradual_onset,
@@ -45,6 +46,109 @@ def test_savgol_preserves_shape_and_reduces_noise() -> None:
 
     assert smoothed.shape == noisy.shape
     assert np.mean(np.abs(smoothed - clean)) < np.mean(np.abs(noisy - clean))
+
+
+def test_detect_onset_finds_first_sustained_crossing() -> None:
+    force = np.array([0.0] * 8 + [1.0, 1.2, 1.4, 1.6, 1.8], dtype=np.float64)
+    time = np.arange(len(force), dtype=np.float64) * 0.5
+    disp = np.linspace(0.0, 12.0, len(force), dtype=np.float64)
+
+    result = detect_onset(
+        force,
+        time_s=time,
+        disp_nm=disp,
+        baseline_points=5,
+        k=0.5,
+        consecutive=3,
+    )
+
+    assert result.success is True
+    assert result.reason is None
+    assert result.onset_index == 8
+    assert result.onset_time_s == pytest.approx(time[8])
+    assert result.onset_disp_nm == pytest.approx(disp[8])
+    assert result.baseline_points == 5
+    assert result.used_smoothing is False
+
+
+def test_detect_onset_returns_unsuccessful_result_without_crossing() -> None:
+    force = np.linspace(0.0, 0.3, 20, dtype=np.float64)
+
+    result = detect_onset(
+        force,
+        baseline_points=10,
+        k=10.0,
+        consecutive=4,
+    )
+
+    assert result.success is False
+    assert result.reason == "no_onset_detected"
+    assert result.onset_index is None
+    assert result.onset_time_s is None
+    assert result.onset_disp_nm is None
+
+
+def test_detect_onset_uses_smoothed_force_when_requested() -> None:
+    force = np.array(
+        [
+            0.0,
+            0.8,
+            -0.8,
+            0.8,
+            -0.8,
+            0.8,
+            -0.8,
+            0.8,
+            -0.8,
+            0.8,
+            -0.8,
+            0.5,
+            0.7,
+            0.9,
+            1.1,
+            1.1,
+            1.1,
+        ],
+        dtype=np.float64,
+    )
+
+    raw_result = detect_onset(
+        force,
+        baseline_points=10,
+        k=2.0,
+        consecutive=3,
+    )
+    smoothed_result = detect_onset(
+        force,
+        baseline_points=10,
+        k=2.0,
+        consecutive=3,
+        smoothing={"window_length": 5, "polyorder": 1},
+    )
+
+    assert raw_result.success is False
+    assert smoothed_result.success is True
+    assert smoothed_result.used_smoothing is True
+    assert dict(smoothed_result.smoothing or {}) == {
+        "window_length": 5,
+        "polyorder": 1,
+    }
+
+
+def test_detect_onset_validates_detection_parameters() -> None:
+    force = np.linspace(0.0, 1.0, 20, dtype=np.float64)
+
+    with pytest.raises(ValueError, match="baseline_points"):
+        detect_onset(force, baseline_points=0)
+
+    with pytest.raises(ValueError, match="consecutive"):
+        detect_onset(force, consecutive=0)
+
+    with pytest.raises(ValueError, match="time_s"):
+        detect_onset(force, time_s=np.arange(19, dtype=np.float64))
+
+    with pytest.raises(ValueError, match="disp_nm"):
+        detect_onset(force, disp_nm=np.arange(19, dtype=np.float64))
 
 
 def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:

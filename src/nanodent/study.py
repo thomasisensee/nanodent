@@ -8,6 +8,7 @@ from typing import Any
 from nanodent.analysis.oliver_pharr import (
     analyze_oliver_pharr as _analyze_oliver_pharr,
 )
+from nanodent.analysis.onset import detect_onset as _detect_onset
 from nanodent.analysis.quality import classify_quality as _classify_quality
 from nanodent.models import Experiment
 
@@ -337,6 +338,58 @@ class Study:
                     fit_num_points=fit_num_points,
                     use_force_peak=use_force_peak,
                     stem=experiment.stem,
+                )
+                if experiment.stem in analyzed_stems
+                else None
+            )
+            for experiment in self.experiments
+        )
+        return Study(experiments=experiments)
+
+    def detect_onset(
+        self,
+        *,
+        baseline_points: int = 100,
+        k: float = 4.0,
+        consecutive: int = 5,
+        smoothing: Mapping[str, Any] | None = None,
+        include_disabled: bool = False,
+    ) -> "Study":
+        """Detect onset on selected experiments using the test force signal.
+
+        Args:
+            baseline_points: Number of leading samples used to estimate the
+                baseline statistics for thresholding.
+            k: Number of baseline standard deviations above the mean required
+                to accept an onset candidate.
+            consecutive: Number of consecutive samples above the threshold
+                required to accept an onset.
+            smoothing: Optional keyword args forwarded to `nanodent.savgol`
+                before thresholding.
+            include_disabled: Whether disabled experiments should be analyzed
+                alongside enabled ones.
+
+        Returns:
+            New study with per-experiment onset results attached to selected
+            experiments.
+        """
+
+        analyzed_stems = {
+            experiment.stem
+            for experiment in self._selected_experiments(
+                include_disabled=include_disabled
+            )
+        }
+        experiments = tuple(
+            experiment.with_onset(
+                _detect_onset(
+                    experiment.section("test")["force_uN"],
+                    time_s=experiment.section("test")["time_s"],
+                    disp_nm=experiment.section("test")["disp_nm"],
+                    baseline_points=baseline_points,
+                    k=k,
+                    consecutive=consecutive,
+                    smoothing=smoothing,
                 )
                 if experiment.stem in analyzed_stems
                 else None

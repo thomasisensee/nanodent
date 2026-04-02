@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from nanodent.analysis.oliver_pharr import OliverPharrExperimentResult
+    from nanodent.analysis.onset import OnsetDetectionResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +119,7 @@ class Experiment:
     segment_definitions: tuple[SegmentDefinition, ...] = ()
     enabled: bool = True
     disabled_reason: str | None = None
+    onset: "OnsetDetectionResult | None" = None
     oliver_pharr: "OliverPharrExperimentResult | None" = None
 
     @property
@@ -201,3 +203,10 @@ class Experiment:
         """Return a copy of the experiment with updated analysis results."""
 
         return replace(self, oliver_pharr=result)
+
+    def with_onset(
+        self, result: "OnsetDetectionResult | None"
+    ) -> "Experiment":
+        """Return a copy of the experiment with updated onset results."""
+
+        return replace(self, onset=result)

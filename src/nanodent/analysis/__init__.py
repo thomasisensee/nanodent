@@ -5,6 +5,7 @@ from nanodent.analysis.oliver_pharr import (
     OliverPharrExperimentResult,
     analyze_oliver_pharr,
 )
+from nanodent.analysis.onset import OnsetDetectionResult, detect_onset
 from nanodent.analysis.quality import (
     QualityCheckResult,
     classify_flat_force,
@@ -16,8 +17,10 @@ from nanodent.analysis.quality import (
 )
 
 __all__ = [
+    "OnsetDetectionResult",
     "OliverPharrExperimentResult",
     "QualityCheckResult",
+    "detect_onset",
     "analyze_oliver_pharr",
     "classify_gradual_onset",
     "classify_high_displacement",
