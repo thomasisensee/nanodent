@@ -160,6 +160,27 @@ def plot_experiments(
         if fit_kwargs is not None:
             overlay_kwargs.update(dict(fit_kwargs))
         ax.plot(fit_result.x_fit, fit_result.y_fit, **overlay_kwargs)
+        x0 = (
+            experiment.oliver_pharr.depth_intercept_nm
+            if show_oliver_pharr
+            else None
+        )
+        y0 = (
+            experiment.oliver_pharr.force_intercept_uN
+            + experiment.oliver_pharr.stiffness_uN_per_nm
+            * experiment.oliver_pharr.depth_intercept_nm
+            if show_oliver_pharr
+            else None
+        )
+        x1 = experiment.oliver_pharr.x_fit[0] if show_oliver_pharr else None
+        y1 = experiment.oliver_pharr.y_fit[0] if show_oliver_pharr else None
+        ax.plot(
+            [x0, x1],
+            [y0, y1],
+            color=overlay_kwargs["color"],
+            linestyle=":",
+            linewidth=0.75,
+        )
 
     return ax
 
