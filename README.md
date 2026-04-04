@@ -40,8 +40,10 @@ from datetime import datetime, timedelta
 
 from nanodent import (
     load_folder,
+    plot_hardness_over_time,
     plot_group_timeline,
     plot_groups,
+    plot_reduced_modulus_over_time,
     save_experiment_plots,
 )
 
@@ -78,6 +80,12 @@ nanodent.plot_experiments(
 ax.set_xlabel("Displacement h / nm")
 ax.set_ylabel("Force P / μN")
 
+fig_h, ax_h = plt.subplots()
+plot_hardness_over_time(ax_h, filtered_study)
+
+fig_er, ax_er = plt.subplots()
+plot_reduced_modulus_over_time(ax_er, filtered_study)
+
 saved = save_experiment_plots(
     filtered_study, "plots/", zero_onset=False
 )
@@ -102,6 +110,8 @@ The public API also exposes:
 - `Study.describe_groups(...) -> list[dict[str, Any]]`
 - `plot_group_timeline(...) -> tuple[Figure, Axes]`
 - `plot_experiments(...) -> Axes`
+- `plot_hardness_over_time(...) -> Axes`
+- `plot_reduced_modulus_over_time(...) -> Axes`
 - `save_experiment_plots(...) -> list[Path]`
 
 ## Acknowledgments

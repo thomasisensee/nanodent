@@ -2,6 +2,7 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -12,6 +13,8 @@ from nanodent.models import Experiment, ExperimentPaths, SignalTable
 from nanodent.plotting import (
     _decorate_saved_experiment_axes,
     plot_experiments,
+    plot_hardness_over_time,
+    plot_reduced_modulus_over_time,
     save_experiment_plots,
 )
 
@@ -75,6 +78,13 @@ def _make_experiment() -> Experiment:
     )
 
 
+def _make_experiment_with_timestamp(timestamp: datetime) -> Experiment:
+    return replace(
+        _make_experiment(),
+        timestamp=timestamp,
+    )
+
+
 def test_plot_experiments_draws_attached_oliver_pharr_overlay() -> None:
     experiment = _make_experiment()
     figure, ax = plt.subplots()
@@ -86,6 +96,120 @@ def test_plot_experiments_draws_attached_oliver_pharr_overlay() -> None:
     assert ax.lines[1].get_label() == "synthetic fit"
     assert ax.lines[2].get_label() == "_nolegend_"
     assert ax.lines[2].get_linestyle() == ":"
+    plt.close(figure)
+
+
+def test_plot_hardness_over_time_returns_axes_and_plots_values() -> None:
+    first = _make_experiment_with_timestamp(datetime(2026, 3, 4, 13, 56, 27))
+    second = _make_experiment_with_timestamp(datetime(2026, 3, 4, 14, 56, 27))
+    figure, ax = plt.subplots()
+
+    returned_ax = plot_hardness_over_time(ax, [first, second])
+
+    assert returned_ax is ax
+    assert len(ax.lines) == 1
+    assert np.allclose(
+        ax.lines[0].get_xdata(),
+        [
+            mdates.date2num(first.timestamp),
+            mdates.date2num(second.timestamp),
+        ],
+    )
+    assert np.allclose(
+        ax.lines[0].get_ydata(),
+        [
+            first.oliver_pharr.hardness_uN_per_nm2,
+            second.oliver_pharr.hardness_uN_per_nm2,
+        ],
+    )
+    assert ax.get_ylabel() == "Hardness H / uN/nm^2"
+    assert ax.get_title() == "Hardness Over Time"
+    plt.close(figure)
+
+
+def test_plot_reduced_modulus_over_time_returns_axes_and_plots_values() -> (
+    None
+):
+    first = _make_experiment_with_timestamp(datetime(2026, 3, 4, 13, 56, 27))
+    second = _make_experiment_with_timestamp(datetime(2026, 3, 4, 14, 56, 27))
+    figure, ax = plt.subplots()
+
+    returned_ax = plot_reduced_modulus_over_time(ax, [first, second])
+
+    assert returned_ax is ax
+    assert len(ax.lines) == 1
+    assert np.allclose(
+        ax.lines[0].get_ydata(),
+        [
+            first.oliver_pharr.reduced_modulus_uN_per_nm2,
+            second.oliver_pharr.reduced_modulus_uN_per_nm2,
+        ],
+    )
+    assert ax.get_ylabel() == "Reduced modulus Er / uN/nm^2"
+    assert ax.get_title() == "Reduced Modulus Over Time"
+    plt.close(figure)
+
+
+def test_plot_hardness_over_time_skips_missing_values() -> None:
+    first = _make_experiment_with_timestamp(datetime(2026, 3, 4, 13, 56, 27))
+    second = replace(
+        _make_experiment_with_timestamp(datetime(2026, 3, 4, 14, 56, 27)),
+        oliver_pharr=replace(
+            _make_experiment().oliver_pharr,
+            hardness_uN_per_nm2=None,
+        ),
+    )
+    figure, ax = plt.subplots()
+
+    plot_hardness_over_time(ax, [first, second])
+
+    assert len(ax.lines) == 1
+    assert np.allclose(
+        ax.lines[0].get_ydata(),
+        [first.oliver_pharr.hardness_uN_per_nm2],
+    )
+    plt.close(figure)
+
+
+def test_plot_reduced_modulus_over_time_honors_selection() -> None:
+    enabled_experiment = _make_experiment_with_timestamp(
+        datetime(2026, 3, 4, 13, 56, 27)
+    )
+    disabled_experiment = replace(
+        _make_experiment_with_timestamp(datetime(2026, 3, 4, 14, 56, 27)),
+        enabled=False,
+        disabled_reason="manual",
+    )
+    figure, ax = plt.subplots()
+
+    plot_reduced_modulus_over_time(
+        ax,
+        [enabled_experiment, disabled_experiment],
+        selection="disabled",
+    )
+
+    assert len(ax.lines) == 1
+    assert np.allclose(
+        ax.lines[0].get_ydata(),
+        [disabled_experiment.oliver_pharr.reduced_modulus_uN_per_nm2],
+    )
+    plt.close(figure)
+
+
+def test_plot_hardness_over_time_leaves_axes_empty_when_no_values() -> None:
+    experiment = replace(
+        _make_experiment(),
+        oliver_pharr=replace(
+            _make_experiment().oliver_pharr,
+            hardness_uN_per_nm2=None,
+        ),
+    )
+    figure, ax = plt.subplots()
+
+    plot_hardness_over_time(ax, [experiment])
+
+    assert len(ax.lines) == 0
+    assert ax.get_ylabel() == "Hardness H / uN/nm^2"
     plt.close(figure)
 
 

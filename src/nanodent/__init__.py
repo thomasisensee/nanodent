@@ -70,6 +70,8 @@ __all__ = [
     "load_folder",
     "plot_experiments",
     "plot_group_timeline",
+    "plot_hardness_over_time",
+    "plot_reduced_modulus_over_time",
     "savgol",
     "save_experiment_plots",
 ]
@@ -109,6 +111,26 @@ def plot_experiments(*args: Any, **kwargs: Any) -> "Axes":
     from nanodent.plotting import plot_experiments as _plot_experiments
 
     return _plot_experiments(*args, **kwargs)
+
+
+def plot_hardness_over_time(*args: Any, **kwargs: Any) -> "Axes":
+    """Lazily import the hardness-over-time plotting helper."""
+
+    from nanodent.plotting import (
+        plot_hardness_over_time as _plot_hardness_over_time,
+    )
+
+    return _plot_hardness_over_time(*args, **kwargs)
+
+
+def plot_reduced_modulus_over_time(*args: Any, **kwargs: Any) -> "Axes":
+    """Lazily import the reduced-modulus-over-time plotting helper."""
+
+    from nanodent.plotting import (
+        plot_reduced_modulus_over_time as _plot_reduced_modulus_over_time,
+    )
+
+    return _plot_reduced_modulus_over_time(*args, **kwargs)
 
 
 def save_experiment_plots(*args: Any, **kwargs: Any) -> list["Path"]:

@@ -165,6 +165,70 @@ def plot_experiments(
     return ax
 
 
+def plot_hardness_over_time(
+    ax: Axes,
+    target: PlotSelection,
+    *,
+    max_gap: timedelta = timedelta(minutes=30),
+    selection: Literal["enabled", "disabled", "both"] = "enabled",
+    marker: str = "o",
+    markersize: float = 6.0,
+    color: str = "k",
+    **scatter_kwargs: Any,
+) -> Axes:
+    """Plot per-experiment hardness against acquisition time."""
+
+    return _plot_scalar_over_time(
+        ax,
+        target,
+        max_gap=max_gap,
+        selection=selection,
+        marker=marker,
+        markersize=markersize,
+        color=color,
+        ylabel="Hardness H / uN/nm^2",
+        title="Hardness Over Time",
+        value_getter=lambda experiment: (
+            None
+            if experiment.oliver_pharr is None
+            else experiment.oliver_pharr.hardness_uN_per_nm2
+        ),
+        **scatter_kwargs,
+    )
+
+
+def plot_reduced_modulus_over_time(
+    ax: Axes,
+    target: PlotSelection,
+    *,
+    max_gap: timedelta = timedelta(minutes=30),
+    selection: Literal["enabled", "disabled", "both"] = "enabled",
+    marker: str = "o",
+    markersize: float = 6.0,
+    color: str = "tab:orange",
+    **scatter_kwargs: Any,
+) -> Axes:
+    """Plot per-experiment reduced modulus against acquisition time."""
+
+    return _plot_scalar_over_time(
+        ax,
+        target,
+        max_gap=max_gap,
+        selection=selection,
+        marker=marker,
+        markersize=markersize,
+        color=color,
+        ylabel="Reduced modulus Er / uN/nm^2",
+        title="Reduced Modulus Over Time",
+        value_getter=lambda experiment: (
+            None
+            if experiment.oliver_pharr is None
+            else experiment.oliver_pharr.reduced_modulus_uN_per_nm2
+        ),
+        **scatter_kwargs,
+    )
+
+
 def save_experiment_plots(
     groups: PlotSelection,
     output_dir: str | Path,
@@ -238,6 +302,52 @@ def save_experiment_plots(
             plt.close(figure)
 
     return saved_paths
+
+
+def _plot_scalar_over_time(
+    ax: Axes,
+    target: PlotSelection,
+    *,
+    max_gap: timedelta,
+    selection: Literal["enabled", "disabled", "both"],
+    marker: str,
+    markersize: float,
+    color: str,
+    ylabel: str,
+    title: str,
+    value_getter: Any,
+    **scatter_kwargs: Any,
+) -> Axes:
+    """Plot one scalar experiment result against acquisition time."""
+
+    experiments = _coerce_experiments(
+        target, max_gap=max_gap, selection=selection
+    )
+    timestamps: list[float] = []
+    values: list[float] = []
+    for experiment in experiments:
+        value = value_getter(experiment)
+        if value is None:
+            continue
+        timestamps.append(mdates.date2num(experiment.timestamp))
+        values.append(float(value))
+
+    plot_kwargs = dict(scatter_kwargs)
+    plot_kwargs.setdefault("linestyle", "")
+    plot_kwargs.setdefault("marker", marker)
+    plot_kwargs.setdefault("markersize", markersize)
+    plot_kwargs.setdefault("color", color)
+    if timestamps:
+        ax.plot(timestamps, values, **plot_kwargs)
+
+    ax.xaxis_date()
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d\n%H:%M"))
+    ax.set_xlabel("Acquisition time")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(axis="x", alpha=0.3)
+    ax.figure.autofmt_xdate()
+    return ax
 
 
 def _decorate_saved_experiment_axes(
