@@ -252,6 +252,7 @@ def _decorate_saved_experiment_axes(
     """Apply saved-plot-only annotations for one experiment axes."""
 
     ax.set_title(_format_saved_experiment_title(experiment))
+    _add_saved_plot_analysis_box(ax, experiment=experiment)
     if not _uses_force_displacement_axes(section=section, x=x, y=y):
         return
     events = _saved_plot_annotation_events(experiment, zero_onset=zero_onset)
@@ -316,16 +317,53 @@ def _uses_force_displacement_axes(*, section: str, x: str, y: str) -> bool:
 
 
 def _format_saved_experiment_title(experiment: Experiment) -> str:
-    """Return the saved-plot title including stiffness when available."""
+    """Return the saved-plot title."""
 
-    title = experiment.stem
+    return experiment.stem
+
+
+def _add_saved_plot_analysis_box(ax: Axes, *, experiment: Experiment) -> None:
+    """Add a compact in-axes summary of attached scalar analysis results."""
+
+    summary = _saved_plot_analysis_summary(experiment)
+    if summary is None:
+        return
+
+    ax.text(
+        0.02,
+        0.98,
+        summary,
+        transform=ax.transAxes,
+        va="top",
+        ha="left",
+        fontsize=9,
+        bbox={
+            "boxstyle": "round,pad=0.35",
+            "facecolor": "white",
+            "edgecolor": "0.6",
+            "alpha": 0.9,
+        },
+        zorder=5,
+    )
+
+
+def _saved_plot_analysis_summary(experiment: Experiment) -> str | None:
+    """Return the saved-plot scalar summary text when values are available."""
+
     fit_result = experiment.oliver_pharr
     if fit_result is None or not fit_result.success:
-        return title
-    if fit_result.stiffness_uN_per_nm is None:
-        return title
-    stiffness = fit_result.stiffness_uN_per_nm
-    return f"{title} | S={stiffness:.2f} uN/nm"
+        return None
+
+    lines: list[str] = []
+    if fit_result.stiffness_uN_per_nm is not None:
+        lines.append(f"S={fit_result.stiffness_uN_per_nm:.2f} uN/nm")
+    if fit_result.hardness_uN_per_nm2 is not None:
+        lines.append(f"H={fit_result.hardness_uN_per_nm2:.3g} uN/nm^2")
+    if fit_result.reduced_modulus_uN_per_nm2 is not None:
+        lines.append(f"Er={fit_result.reduced_modulus_uN_per_nm2:.3g} uN/nm^2")
+    if not lines:
+        return None
+    return "\n".join(lines)
 
 
 @dataclass(frozen=True, slots=True)

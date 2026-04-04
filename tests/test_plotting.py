@@ -45,11 +45,6 @@ def _make_experiment() -> Experiment:
         drift=None,
         test=test,
     )
-    experiment = experiment.with_oliver_pharr(
-        analyze_oliver_pharr(
-            disp, force, unloading_fraction=0.25, stem="synthetic"
-        )
-    )
     experiment = experiment.with_onset(
         detect_onset(
             force,
@@ -58,6 +53,15 @@ def _make_experiment() -> Experiment:
             baseline_points=20,
             k=1.0,
             consecutive=3,
+        )
+    )
+    experiment = experiment.with_oliver_pharr(
+        analyze_oliver_pharr(
+            disp,
+            force,
+            unloading_fraction=0.25,
+            onset_disp_nm=experiment.onset.onset_disp_nm,
+            stem="synthetic",
         )
     )
     return experiment.with_force_peaks(
@@ -167,7 +171,7 @@ def test_plot_experiments_leaves_curve_unchanged_without_usable_onset() -> (
     plt.close(figure)
 
 
-def test_saved_plot_decoration_adds_top_axis_and_stiffness_title() -> None:
+def test_saved_plot_decoration_adds_top_axis_and_analysis_box() -> None:
     experiment = _make_experiment()
     figure, ax = plt.subplots()
     ax.set_xlim(0.0, 120.0)
@@ -181,7 +185,13 @@ def test_saved_plot_decoration_adds_top_axis_and_stiffness_title() -> None:
         y="force_uN",
     )
 
-    assert ax.get_title() == "synthetic | S=5.00 uN/nm"
+    assert ax.get_title() == "synthetic"
+    assert len(ax.texts) == 1
+    assert ax.texts[0].get_text() == (
+        "S=5.00 uN/nm\n"
+        f"H={experiment.oliver_pharr.hardness_uN_per_nm2:.3g} uN/nm^2\n"
+        f"Er={experiment.oliver_pharr.reduced_modulus_uN_per_nm2:.3g} uN/nm^2"
+    )
     assert len(figure.axes) == 3
     top_ax = figure.axes[1]
     right_ax = figure.axes[2]
@@ -287,13 +297,20 @@ def test_saved_plot_decoration_skips_top_axis_for_other_axes() -> None:
         y="force_uN",
     )
 
-    assert ax.get_title() == "synthetic | S=5.00 uN/nm"
+    assert ax.get_title() == "synthetic"
+    assert len(ax.texts) == 1
     assert len(figure.axes) == 1
     plt.close(figure)
 
 
-def test_saved_plot_decoration_uses_stem_only_without_stiffness() -> None:
-    experiment = _make_experiment().with_oliver_pharr(None)
+def test_saved_plot_decoration_omits_missing_analysis_values() -> None:
+    experiment = _make_experiment().with_oliver_pharr(
+        replace(
+            _make_experiment().oliver_pharr,
+            hardness_uN_per_nm2=None,
+            reduced_modulus_uN_per_nm2=None,
+        )
+    )
     figure, ax = plt.subplots()
 
     _decorate_saved_experiment_axes(
@@ -305,6 +322,8 @@ def test_saved_plot_decoration_uses_stem_only_without_stiffness() -> None:
     )
 
     assert ax.get_title() == "synthetic"
+    assert len(ax.texts) == 1
+    assert ax.texts[0].get_text() == "S=5.00 uN/nm"
     assert len(figure.axes) == 3
     plt.close(figure)
 
