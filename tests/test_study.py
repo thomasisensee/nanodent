@@ -254,6 +254,16 @@ def test_analyze_oliver_pharr_attaches_hardness_after_onset_detection(
         "missing_onset"
     )
     assert by_stem[EXPERIMENT_A].oliver_pharr.epsilon == pytest.approx(0.75)
+    if by_stem[EXPERIMENT_A].oliver_pharr.hardness_success:
+        assert (
+            by_stem[EXPERIMENT_A].oliver_pharr.reduced_modulus_uN_per_nm2
+            is not None
+        )
+    else:
+        assert (
+            by_stem[EXPERIMENT_A].oliver_pharr.reduced_modulus_uN_per_nm2
+            is None
+        )
 
 
 def test_analyze_oliver_pharr_marks_missing_onset_when_not_detected(
@@ -269,6 +279,9 @@ def test_analyze_oliver_pharr_marks_missing_onset_when_not_detected(
     assert by_stem[EXPERIMENT_A].oliver_pharr.hardness_success is False
     assert by_stem[EXPERIMENT_A].oliver_pharr.hardness_reason == (
         "missing_onset"
+    )
+    assert (
+        by_stem[EXPERIMENT_A].oliver_pharr.reduced_modulus_uN_per_nm2 is None
     )
 
 

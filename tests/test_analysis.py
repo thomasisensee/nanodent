@@ -262,6 +262,9 @@ def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
     assert result.contact_depth_nm == pytest.approx(65.0)
     assert result.contact_area_nm2 == pytest.approx(103512.5)
     assert result.hardness_uN_per_nm2 == pytest.approx(100.0 / 103512.5)
+    assert result.reduced_modulus_uN_per_nm2 == pytest.approx(
+        0.5 * np.sqrt(np.pi) * 5.0 / np.sqrt(103512.5)
+    )
     assert len(result.x_fit) == 200
     assert len(result.y_fit) == 200
 
@@ -319,6 +322,7 @@ def test_analyze_oliver_pharr_marks_missing_onset_for_hardness() -> None:
     assert result.contact_depth_nm is None
     assert result.contact_area_nm2 is None
     assert result.hardness_uN_per_nm2 is None
+    assert result.reduced_modulus_uN_per_nm2 is None
 
 
 def test_analyze_oliver_pharr_can_override_epsilon() -> None:
@@ -336,6 +340,12 @@ def test_analyze_oliver_pharr_can_override_epsilon() -> None:
     assert result.epsilon == pytest.approx(0.5)
     assert result.contact_depth_nm == pytest.approx(70.0)
     assert result.contact_area_nm2 == pytest.approx(24.5 * 70.0 * 70.0)
+    assert result.reduced_modulus_uN_per_nm2 == pytest.approx(
+        0.5
+        * np.sqrt(np.pi)
+        * result.stiffness_uN_per_nm
+        / np.sqrt(result.contact_area_nm2)
+    )
 
 
 def test_analyze_oliver_pharr_marks_invalid_onset_corrected_hmax() -> None:
@@ -352,6 +362,7 @@ def test_analyze_oliver_pharr_marks_invalid_onset_corrected_hmax() -> None:
     assert result.hardness_success is False
     assert result.hardness_reason == "invalid_hmax"
     assert result.hmax_nm == pytest.approx(0.0)
+    assert result.reduced_modulus_uN_per_nm2 is None
 
 
 def test_analyze_oliver_pharr_marks_missing_unloading_branch() -> None:

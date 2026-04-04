@@ -39,6 +39,7 @@ class OliverPharrExperimentResult:
     contact_depth_nm: float | None = None
     contact_area_nm2: float | None = None
     hardness_uN_per_nm2: float | None = None
+    reduced_modulus_uN_per_nm2: float | None = None
     x_fit: NDArray[np.float64] = field(
         default_factory=lambda: np.empty(0, dtype=np.float64)
     )
@@ -69,6 +70,7 @@ class OliverPharrExperimentResult:
             "contact_depth_nm": self.contact_depth_nm,
             "contact_area_nm2": self.contact_area_nm2,
             "hardness_uN_per_nm2": self.hardness_uN_per_nm2,
+            "reduced_modulus_uN_per_nm2": self.reduced_modulus_uN_per_nm2,
         }
 
 
@@ -413,6 +415,12 @@ def _attach_hardness(
         )
 
     hardness_uN_per_nm2 = float(result.peak_force_uN / contact_area_nm2)
+    reduced_modulus_uN_per_nm2 = float(
+        0.5
+        * np.sqrt(np.pi)
+        * result.stiffness_uN_per_nm
+        / np.sqrt(contact_area_nm2)
+    )
     return replace(
         result,
         epsilon=float(epsilon),
@@ -421,6 +429,7 @@ def _attach_hardness(
         contact_depth_nm=contact_depth_nm,
         contact_area_nm2=contact_area_nm2,
         hardness_uN_per_nm2=hardness_uN_per_nm2,
+        reduced_modulus_uN_per_nm2=reduced_modulus_uN_per_nm2,
         hardness_success=True,
         hardness_reason=None,
     )
