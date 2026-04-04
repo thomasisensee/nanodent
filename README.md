@@ -71,13 +71,16 @@ nanodent.plot_experiments(
     fit_kwargs={"color": "gray", "linestyle": "solid", "linewidth": "2"},
     x="disp_nm",
     y="force_uN",
+    zero_onset=False,
     cmap="rainbow",
 )
 
 ax.set_xlabel("Displacement h / nm")
 ax.set_ylabel("Force P / μN")
 
-saved = save_experiment_plots(filtered_study, "plots/")
+saved = save_experiment_plots(
+    filtered_study, "plots/", zero_onset=False
+)
 ```
 
 `Study.classify_quality()` keeps all experiments loaded but marks

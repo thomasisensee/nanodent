@@ -110,6 +110,7 @@ def plot_experiments(
     cmap: str = "viridis",
     max_gap: timedelta = timedelta(minutes=30),
     selection: Literal["enabled", "disabled", "both"] = "enabled",
+    zero_onset: bool = False,
     show_oliver_pharr: bool = True,
     fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
@@ -125,12 +126,19 @@ def plot_experiments(
 
     color_map = plt.get_cmap(cmap, max(len(experiments), 1))
     for index, experiment in enumerate(experiments):
+        onset_offset = _onset_axis_offset(
+            experiment,
+            section=section,
+            axis=x,
+            zero_onset=zero_onset,
+        )
         curve = _prepare_curve(
             experiment,
             section=section,
             x=x,
             y=y,
             smoothing=smoothing,
+            onset_offset=onset_offset,
         )
         curve_kwargs = dict(line_kwargs)
         curve_kwargs.setdefault("color", color_map(index))
@@ -151,6 +159,7 @@ def plot_experiments(
             stem=experiment.stem,
             fit_result=fit_result,
             fit_kwargs=fit_kwargs,
+            onset_offset=onset_offset if x == "disp_nm" else None,
         )
 
     return ax
@@ -166,6 +175,7 @@ def save_experiment_plots(
     smoothing: Mapping[str, Any] | None = None,
     max_gap: timedelta = timedelta(minutes=30),
     selection: Literal["enabled", "disabled", "both"] = "enabled",
+    zero_onset: bool = False,
     show_oliver_pharr: bool = True,
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] | None = None,
@@ -196,6 +206,7 @@ def save_experiment_plots(
             smoothing=smoothing,
             max_gap=max_gap,
             selection="both",
+            zero_onset=zero_onset,
             show_oliver_pharr=show_oliver_pharr,
             fit_kwargs=fit_kwargs,
             **line_kwargs,
@@ -213,6 +224,7 @@ def save_experiment_plots(
             section=section,
             x=x,
             y=y,
+            zero_onset=zero_onset,
         )
         ax.grid(alpha=0.2)
         figure.tight_layout()
@@ -235,13 +247,14 @@ def _decorate_saved_experiment_axes(
     section: str,
     x: str,
     y: str,
+    zero_onset: bool = False,
 ) -> None:
     """Apply saved-plot-only annotations for one experiment axes."""
 
     ax.set_title(_format_saved_experiment_title(experiment))
     if not _uses_force_displacement_axes(section=section, x=x, y=y):
         return
-    events = _saved_plot_annotation_events(experiment)
+    events = _saved_plot_annotation_events(experiment, zero_onset=zero_onset)
     _add_saved_plot_top_axis(ax, events=events)
     _add_saved_plot_right_axis(ax, events=events)
 
@@ -252,6 +265,7 @@ def _plot_oliver_pharr_overlay(
     stem: str,
     fit_result: Any,
     fit_kwargs: Mapping[str, Any] | None,
+    onset_offset: float | None,
 ) -> None:
     """Plot the fitted and softly extended Oliver-Pharr lines."""
 
@@ -270,9 +284,14 @@ def _plot_oliver_pharr_overlay(
     }
     if fit_kwargs is not None:
         overlay_kwargs.update(dict(fit_kwargs))
-    ax.plot(fit_result.x_fit, fit_result.y_fit, **overlay_kwargs)
+    x_fit = np.asarray(fit_result.x_fit, dtype=np.float64)
+    if onset_offset is not None:
+        x_fit = x_fit - onset_offset
+    ax.plot(x_fit, fit_result.y_fit, **overlay_kwargs)
 
-    extension_segment = _oliver_pharr_extension_segment(fit_result)
+    extension_segment = _oliver_pharr_extension_segment(
+        fit_result, onset_offset=onset_offset
+    )
     if extension_segment is None:
         return
 
@@ -385,6 +404,8 @@ def _saved_plot_right_axis_ticks(
 
 def _saved_plot_annotation_events(
     experiment: Experiment,
+    *,
+    zero_onset: bool,
 ) -> list[_SavedPlotAnnotationEvent]:
     """Return saved-plot annotation events as displacement-force pairs."""
 
@@ -392,6 +413,13 @@ def _saved_plot_annotation_events(
     disp = np.asarray(experiment.test["disp_nm"], dtype=np.float64)
     if len(force) == 0 or len(disp) == 0:
         return []
+
+    onset_offset = _onset_axis_offset(
+        experiment,
+        section="test",
+        axis="disp_nm",
+        zero_onset=zero_onset,
+    )
 
     events: list[_SavedPlotAnnotationEvent] = []
     onset = experiment.onset
@@ -405,7 +433,9 @@ def _saved_plot_annotation_events(
         if 0 <= onset_index < len(force):
             events.append(
                 _SavedPlotAnnotationEvent(
-                    disp_nm=float(onset.onset_disp_nm),
+                    disp_nm=_shift_axis_value(
+                        float(onset.onset_disp_nm), onset_offset
+                    ),
                     force_uN=float(force[onset_index]),
                 )
             )
@@ -414,7 +444,7 @@ def _saved_plot_annotation_events(
     if force_peaks is not None and force_peaks.success:
         events.extend(
             _SavedPlotAnnotationEvent(
-                disp_nm=float(peak.disp_nm),
+                disp_nm=_shift_axis_value(float(peak.disp_nm), onset_offset),
                 force_uN=float(peak.force_uN),
             )
             for peak in force_peaks.peaks
@@ -424,7 +454,7 @@ def _saved_plot_annotation_events(
     max_index = int(np.argmax(force))
     events.append(
         _SavedPlotAnnotationEvent(
-            disp_nm=float(disp[max_index]),
+            disp_nm=_shift_axis_value(float(disp[max_index]), onset_offset),
             force_uN=float(force[max_index]),
         )
     )
@@ -461,6 +491,8 @@ def _unique_sorted_tick_positions(
 
 def _oliver_pharr_extension_segment(
     fit_result: Any,
+    *,
+    onset_offset: float | None,
 ) -> tuple[list[float], list[float]] | None:
     """Return the softened extension segment from intercept to fit start."""
 
@@ -479,6 +511,8 @@ def _oliver_pharr_extension_segment(
         + fit_result.stiffness_uN_per_nm * fit_result.depth_intercept_nm
     )
     end_x = float(fit_result.x_fit[0])
+    start_x = _shift_axis_value(start_x, onset_offset)
+    end_x = _shift_axis_value(end_x, onset_offset)
     end_y = float(fit_result.y_fit[0])
     return [start_x, end_x], [start_y, end_y]
 
@@ -503,6 +537,7 @@ def _prepare_curve(
     x: str,
     y: str,
     smoothing: Mapping[str, Any] | None,
+    onset_offset: float | None,
 ) -> _PreparedCurve:
     """Return plotting arrays for one experiment and signal selection."""
 
@@ -513,7 +548,46 @@ def _prepare_curve(
         smoothing_kwargs = dict(smoothing)
         x_values = savgol(x_values, **smoothing_kwargs)
         y_values = savgol(y_values, **smoothing_kwargs)
+    if onset_offset is not None:
+        x_values = x_values - onset_offset
     return _PreparedCurve(x_values=x_values, y_values=y_values)
+
+
+def _onset_axis_offset(
+    experiment: Experiment,
+    *,
+    section: str,
+    axis: str,
+    zero_onset: bool,
+) -> float | None:
+    """Return the onset-derived offset for a supported x-axis."""
+
+    if not zero_onset or section != "test":
+        return None
+    onset = experiment.onset
+    if onset is None or not onset.success:
+        return None
+    if axis == "disp_nm":
+        return (
+            float(onset.onset_disp_nm)
+            if onset.onset_disp_nm is not None
+            else None
+        )
+    if axis == "time_s":
+        return (
+            float(onset.onset_time_s)
+            if onset.onset_time_s is not None
+            else None
+        )
+    return None
+
+
+def _shift_axis_value(value: float, onset_offset: float | None) -> float:
+    """Return one axis value shifted by the onset offset when present."""
+
+    if onset_offset is None:
+        return float(value)
+    return float(value) - onset_offset
 
 
 def _coerce_experiments(
