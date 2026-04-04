@@ -237,6 +237,41 @@ def test_analyze_oliver_pharr_can_include_disabled_experiments(
     assert by_stem[EXPERIMENT_A].oliver_pharr.stem == EXPERIMENT_A
 
 
+def test_analyze_oliver_pharr_attaches_hardness_after_onset_detection(
+    base_study,
+) -> None:
+    analyzed = base_study.detect_onset().analyze_oliver_pharr()
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
+    }
+
+    assert by_stem[EXPERIMENT_A].oliver_pharr is not None
+    assert by_stem[EXPERIMENT_A].oliver_pharr.success is True
+    assert by_stem[EXPERIMENT_A].oliver_pharr.onset_disp_nm == pytest.approx(
+        by_stem[EXPERIMENT_A].onset.onset_disp_nm
+    )
+    assert by_stem[EXPERIMENT_A].oliver_pharr.hardness_reason != (
+        "missing_onset"
+    )
+    assert by_stem[EXPERIMENT_A].oliver_pharr.epsilon == pytest.approx(0.75)
+
+
+def test_analyze_oliver_pharr_marks_missing_onset_when_not_detected(
+    base_study,
+) -> None:
+    analyzed = base_study.analyze_oliver_pharr()
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
+    }
+
+    assert by_stem[EXPERIMENT_A].oliver_pharr is not None
+    assert by_stem[EXPERIMENT_A].oliver_pharr.success is True
+    assert by_stem[EXPERIMENT_A].oliver_pharr.hardness_success is False
+    assert by_stem[EXPERIMENT_A].oliver_pharr.hardness_reason == (
+        "missing_onset"
+    )
+
+
 def test_analyze_oliver_pharr_attaches_unsuccessful_results(
     base_study,
 ) -> None:

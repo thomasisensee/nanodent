@@ -234,7 +234,12 @@ def test_detect_force_peaks_validates_aligned_inputs() -> None:
 def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
     x, y = _make_linear_unloading_curve()
 
-    result = analyze_oliver_pharr(x, y, unloading_fraction=0.25)
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        unloading_fraction=0.25,
+        onset_disp_nm=20.0,
+    )
 
     assert result.success is True
     assert result.reason is None
@@ -249,6 +254,14 @@ def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
     assert result.force_intercept_uN == pytest.approx(-400.0, rel=1e-4)
     assert result.depth_intercept_nm == pytest.approx(80.0, rel=1e-4)
     assert result.r_squared == pytest.approx(1.0, abs=1e-6)
+    assert result.hardness_success is True
+    assert result.hardness_reason is None
+    assert result.epsilon == pytest.approx(0.75)
+    assert result.onset_disp_nm == pytest.approx(20.0)
+    assert result.hmax_nm == pytest.approx(80.0)
+    assert result.contact_depth_nm == pytest.approx(65.0)
+    assert result.contact_area_nm2 == pytest.approx(103512.5)
+    assert result.hardness_uN_per_nm2 == pytest.approx(100.0 / 103512.5)
     assert len(result.x_fit) == 200
     assert len(result.y_fit) == 200
 
@@ -284,6 +297,61 @@ def test_analyze_oliver_pharr_rejects_invalid_unloading_fraction() -> None:
 
     with pytest.raises(ValueError, match="unloading_fraction"):
         analyze_oliver_pharr(x, y, unloading_fraction=1.1)
+
+
+def test_analyze_oliver_pharr_rejects_invalid_epsilon() -> None:
+    x, y = _make_linear_unloading_curve()
+
+    with pytest.raises(ValueError, match="epsilon"):
+        analyze_oliver_pharr(x, y, epsilon=0.0)
+
+
+def test_analyze_oliver_pharr_marks_missing_onset_for_hardness() -> None:
+    x, y = _make_linear_unloading_curve()
+
+    result = analyze_oliver_pharr(x, y, unloading_fraction=0.25)
+
+    assert result.success is True
+    assert result.hardness_success is False
+    assert result.hardness_reason == "missing_onset"
+    assert result.epsilon == pytest.approx(0.75)
+    assert result.hmax_nm is None
+    assert result.contact_depth_nm is None
+    assert result.contact_area_nm2 is None
+    assert result.hardness_uN_per_nm2 is None
+
+
+def test_analyze_oliver_pharr_can_override_epsilon() -> None:
+    x, y = _make_linear_unloading_curve()
+
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        unloading_fraction=0.25,
+        onset_disp_nm=20.0,
+        epsilon=0.5,
+    )
+
+    assert result.hardness_success is True
+    assert result.epsilon == pytest.approx(0.5)
+    assert result.contact_depth_nm == pytest.approx(70.0)
+    assert result.contact_area_nm2 == pytest.approx(24.5 * 70.0 * 70.0)
+
+
+def test_analyze_oliver_pharr_marks_invalid_onset_corrected_hmax() -> None:
+    x, y = _make_linear_unloading_curve()
+
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        unloading_fraction=0.25,
+        onset_disp_nm=100.0,
+    )
+
+    assert result.success is True
+    assert result.hardness_success is False
+    assert result.hardness_reason == "invalid_hmax"
+    assert result.hmax_nm == pytest.approx(0.0)
 
 
 def test_analyze_oliver_pharr_marks_missing_unloading_branch() -> None:

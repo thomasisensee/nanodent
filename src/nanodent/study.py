@@ -352,6 +352,7 @@ class Study:
         smoothing: Mapping[str, Any] | None = None,
         fit_num_points: int = 2,
         use_force_peak: bool = True,
+        epsilon: float = 0.75,
         include_disabled: bool = False,
     ) -> "Study":
         """Analyze selected experiments with a straight-line unloading fit.
@@ -363,6 +364,8 @@ class Study:
                 and applied equally to displacement and force.
             fit_num_points: Number of points used for dense fitted-line
                 coordinates.
+            epsilon: Geometry factor used for contact-depth and hardness
+                estimation when onset displacement is available.
             include_disabled: Whether disabled experiments should be analyzed
                 alongside enabled ones.
 
@@ -386,6 +389,13 @@ class Study:
                     smoothing=smoothing,
                     fit_num_points=fit_num_points,
                     use_force_peak=use_force_peak,
+                    onset_disp_nm=(
+                        experiment.onset.onset_disp_nm
+                        if experiment.onset is not None
+                        and experiment.onset.success
+                        else None
+                    ),
+                    epsilon=epsilon,
                     stem=experiment.stem,
                 )
                 if experiment.stem in analyzed_stems

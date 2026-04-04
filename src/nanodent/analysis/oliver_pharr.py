@@ -1,7 +1,7 @@
 """Oliver-Pharr-style unloading analysis helpers."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
@@ -31,6 +31,14 @@ class OliverPharrExperimentResult:
     force_intercept_uN: float | None = None
     depth_intercept_nm: float | None = None
     r_squared: float | None = None
+    hardness_success: bool = False
+    hardness_reason: str | None = None
+    epsilon: float | None = None
+    onset_disp_nm: float | None = None
+    hmax_nm: float | None = None
+    contact_depth_nm: float | None = None
+    contact_area_nm2: float | None = None
+    hardness_uN_per_nm2: float | None = None
     x_fit: NDArray[np.float64] = field(
         default_factory=lambda: np.empty(0, dtype=np.float64)
     )
@@ -53,6 +61,14 @@ class OliverPharrExperimentResult:
             "depth_intercept_nm": self.depth_intercept_nm,
             "r_squared": self.r_squared,
             "fit_point_count": self.fit_point_count,
+            "hardness_success": self.hardness_success,
+            "hardness_reason": self.hardness_reason,
+            "epsilon": self.epsilon,
+            "onset_disp_nm": self.onset_disp_nm,
+            "hmax_nm": self.hmax_nm,
+            "contact_depth_nm": self.contact_depth_nm,
+            "contact_area_nm2": self.contact_area_nm2,
+            "hardness_uN_per_nm2": self.hardness_uN_per_nm2,
         }
 
 
@@ -64,6 +80,8 @@ def analyze_oliver_pharr(
     smoothing: Mapping[str, Any] | None = None,
     fit_num_points: int = 200,
     use_force_peak: bool = True,
+    onset_disp_nm: float | None = None,
+    epsilon: float = 0.75,
     stem: str = "",
 ) -> OliverPharrExperimentResult:
     """Fit a straight line to the early unloading branch of one test curve.
@@ -79,6 +97,9 @@ def analyze_oliver_pharr(
             force before peak detection and fitting.
         fit_num_points: Number of points used to evaluate the dense fitted
             straight line for plotting.
+        onset_disp_nm: Optional onset displacement used to compute
+            onset-corrected hardness diagnostics.
+        epsilon: Geometry factor used for contact-depth estimation.
         stem: Optional experiment label propagated by higher-level wrappers.
 
     Returns:
@@ -99,6 +120,8 @@ def analyze_oliver_pharr(
         raise ValueError("unloading_fraction must lie in the interval (0, 1].")
     if fit_num_points < 2:
         raise ValueError("fit_num_points must be at least 2.")
+    if epsilon <= 0.0:
+        raise ValueError("epsilon must be greater than 0.")
 
     frozen_smoothing = _freeze_mapping(smoothing)
     if frozen_smoothing is None:
@@ -246,7 +269,7 @@ def analyze_oliver_pharr(
     y_fit = np.asarray(
         _linear_model(x_fit, slope, intercept), dtype=np.float64
     )
-    return OliverPharrExperimentResult(
+    result = OliverPharrExperimentResult(
         stem=stem,
         success=True,
         reason=None,
@@ -262,8 +285,15 @@ def analyze_oliver_pharr(
         force_intercept_uN=intercept,
         depth_intercept_nm=depth_intercept,
         r_squared=r_squared,
+        epsilon=float(epsilon),
+        onset_disp_nm=None if onset_disp_nm is None else float(onset_disp_nm),
         x_fit=x_fit,
         y_fit=y_fit,
+    )
+    return _attach_hardness(
+        result,
+        onset_disp_nm=onset_disp_nm,
+        epsilon=epsilon,
     )
 
 
@@ -300,6 +330,99 @@ def _failed_result(
         r_squared=None,
         x_fit=np.empty(0, dtype=np.float64),
         y_fit=np.empty(0, dtype=np.float64),
+    )
+
+
+def _attach_hardness(
+    result: OliverPharrExperimentResult,
+    *,
+    onset_disp_nm: float | None,
+    epsilon: float,
+) -> OliverPharrExperimentResult:
+    """Return an Oliver-Pharr result with hardness diagnostics attached."""
+
+    if onset_disp_nm is None:
+        return replace(
+            result,
+            epsilon=float(epsilon),
+            onset_disp_nm=None,
+            hardness_success=False,
+            hardness_reason="missing_onset",
+        )
+    if result.peak_force_uN is None:
+        return replace(
+            result,
+            epsilon=float(epsilon),
+            onset_disp_nm=float(onset_disp_nm),
+            hardness_success=False,
+            hardness_reason="missing_peak_force",
+        )
+    if result.peak_disp_nm is None:
+        return replace(
+            result,
+            epsilon=float(epsilon),
+            onset_disp_nm=float(onset_disp_nm),
+            hardness_success=False,
+            hardness_reason="missing_peak_disp",
+        )
+    if result.stiffness_uN_per_nm is None:
+        return replace(
+            result,
+            epsilon=float(epsilon),
+            onset_disp_nm=float(onset_disp_nm),
+            hardness_success=False,
+            hardness_reason="missing_stiffness",
+        )
+
+    hmax_nm = float(result.peak_disp_nm - onset_disp_nm)
+    if not np.isfinite(hmax_nm) or hmax_nm <= 0.0:
+        return replace(
+            result,
+            epsilon=float(epsilon),
+            onset_disp_nm=float(onset_disp_nm),
+            hmax_nm=hmax_nm,
+            hardness_success=False,
+            hardness_reason="invalid_hmax",
+        )
+
+    contact_depth_nm = float(
+        hmax_nm - epsilon * result.peak_force_uN / result.stiffness_uN_per_nm
+    )
+    if not np.isfinite(contact_depth_nm) or contact_depth_nm <= 0.0:
+        return replace(
+            result,
+            epsilon=float(epsilon),
+            onset_disp_nm=float(onset_disp_nm),
+            hmax_nm=hmax_nm,
+            contact_depth_nm=contact_depth_nm,
+            hardness_success=False,
+            hardness_reason="invalid_contact_depth",
+        )
+
+    contact_area_nm2 = float(24.5 * contact_depth_nm * contact_depth_nm)
+    if not np.isfinite(contact_area_nm2) or contact_area_nm2 <= 0.0:
+        return replace(
+            result,
+            epsilon=float(epsilon),
+            onset_disp_nm=float(onset_disp_nm),
+            hmax_nm=hmax_nm,
+            contact_depth_nm=contact_depth_nm,
+            contact_area_nm2=contact_area_nm2,
+            hardness_success=False,
+            hardness_reason="invalid_contact_area",
+        )
+
+    hardness_uN_per_nm2 = float(result.peak_force_uN / contact_area_nm2)
+    return replace(
+        result,
+        epsilon=float(epsilon),
+        onset_disp_nm=float(onset_disp_nm),
+        hmax_nm=hmax_nm,
+        contact_depth_nm=contact_depth_nm,
+        contact_area_nm2=contact_area_nm2,
+        hardness_uN_per_nm2=hardness_uN_per_nm2,
+        hardness_success=True,
+        hardness_reason=None,
     )
 
 
