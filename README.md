@@ -36,7 +36,7 @@ python -m pytest
 `.tdm` and `.tdx` file paths attached to each experiment for future extension.
 
 ```python
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from nanodent import (
     load_folder,
@@ -49,6 +49,14 @@ study = load_folder("path/to/experiment-folder")
 filtered_study = study.classify_quality()
 filtered_study = filtered_study.analyze_oliver_pharr()
 summaries = filtered_study.describe_groups()
+manual_groups = filtered_study.group_by_datetime_ranges(
+    [
+        (
+            datetime(2026, 3, 4, 13, 0, 0),
+            datetime(2026, 3, 4, 15, 0, 0),
+        ),
+    ]
+)
 
 timeline_fig, timeline_ax = plot_group_timeline(
     filtered_study,
@@ -86,6 +94,7 @@ The public API also exposes:
 - `load_experiment(path) -> Experiment`
 - `load_folder(path) -> Study`
 - `Study.analyze_oliver_pharr(...) -> Study`
+- `Study.group_by_datetime_ranges(...) -> list[ExperimentGroup]`
 - `Study.group_by_time_gap(...) -> list[ExperimentGroup]`
 - `Study.describe_groups(...) -> list[dict[str, Any]]`
 - `plot_group_timeline(...) -> tuple[Figure, Axes]`

@@ -155,11 +155,13 @@ class Study:
         *,
         include_disabled: bool = False,
     ) -> list[ExperimentGroup]:
-        """Create explicit groups from Python-side selections.
+        """Create explicit groups from Python-side experiment selections.
 
         Args:
             groups: Manually chosen experiment sequences, such as selections
-                made in a notebook or GUI.
+                made in a notebook or GUI. Use
+                `group_by_datetime_ranges(...)` for timestamp-window based
+                grouping.
             include_disabled: Whether disabled experiments should remain in the
                 regrouped result.
 
@@ -186,6 +188,50 @@ class Study:
                 ExperimentGroup(experiments=sorted_group, index=len(regrouped))
             )
         return regrouped
+
+    def group_by_datetime_ranges(
+        self,
+        ranges: Iterable[tuple[datetime, datetime]],
+        *,
+        include_disabled: bool = False,
+    ) -> list[ExperimentGroup]:
+        """Create groups from explicit inclusive datetime windows.
+
+        Args:
+            ranges: Inclusive `(start, end)` datetime pairs used to select
+                experiments by timestamp.
+            include_disabled: Whether disabled experiments should remain in the
+                grouped result.
+
+        Returns:
+            Explicit experiment groups in the order the datetime windows were
+            requested.
+
+        Raises:
+            ValueError: If a datetime range has `start > end` or if requested
+                ranges overlap.
+        """
+
+        validated_ranges = self._validate_datetime_ranges(ranges)
+        experiments = self._selected_experiments(
+            include_disabled=include_disabled
+        )
+        grouped: list[ExperimentGroup] = []
+        for start, end in validated_ranges:
+            selected_group = tuple(
+                experiment
+                for experiment in experiments
+                if start <= experiment.timestamp <= end
+            )
+            if not selected_group:
+                continue
+            grouped.append(
+                ExperimentGroup(
+                    experiments=selected_group,
+                    index=len(grouped),
+                )
+            )
+        return grouped
 
     def describe_groups(
         self,
@@ -492,3 +538,19 @@ class Study:
         return tuple(
             experiment for experiment in self.experiments if experiment.enabled
         )
+
+    def _validate_datetime_ranges(
+        self, ranges: Iterable[tuple[datetime, datetime]]
+    ) -> tuple[tuple[datetime, datetime], ...]:
+        """Return validated datetime ranges preserving input order."""
+
+        validated_ranges = tuple(ranges)
+        for start, end in validated_ranges:
+            if start > end:
+                raise ValueError("Datetime ranges require start <= end.")
+
+        sorted_ranges = sorted(validated_ranges, key=lambda item: item[0])
+        for previous, current in zip(sorted_ranges, sorted_ranges[1:]):
+            if current[0] <= previous[1]:
+                raise ValueError("Datetime ranges must not overlap.")
+        return validated_ranges

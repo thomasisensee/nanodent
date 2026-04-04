@@ -60,6 +60,112 @@ def test_regroup_supports_manual_group_overrides(base_study) -> None:
     assert groups[0].stems == (EXPERIMENT_A, EXPERIMENT_C)
 
 
+def test_group_by_datetime_ranges_selects_experiments_in_range(
+    base_study,
+) -> None:
+    groups = base_study.group_by_datetime_ranges(
+        [
+            (
+                datetime(2026, 3, 4, 13, 56, 27),
+                datetime(2026, 3, 4, 14, 2, 2),
+            ),
+            (
+                datetime(2026, 3, 11, 12, 6, 42),
+                datetime(2026, 3, 11, 12, 6, 42),
+            ),
+        ]
+    )
+
+    assert [group.index for group in groups] == [0, 1]
+    assert groups[0].stems == (EXPERIMENT_A, EXPERIMENT_B)
+    assert groups[1].stems == (EXPERIMENT_C,)
+
+
+def test_group_by_datetime_ranges_skips_empty_ranges(base_study) -> None:
+    groups = base_study.group_by_datetime_ranges(
+        [
+            (
+                datetime(2026, 3, 1, 0, 0, 0),
+                datetime(2026, 3, 1, 1, 0, 0),
+            ),
+            (
+                datetime(2026, 3, 11, 12, 6, 42),
+                datetime(2026, 3, 11, 12, 10, 0),
+            ),
+        ]
+    )
+
+    assert [group.index for group in groups] == [0]
+    assert groups[0].stems == (EXPERIMENT_C, EXPERIMENT_D)
+
+
+def test_group_by_datetime_ranges_excludes_disabled_by_default(
+    base_study,
+) -> None:
+    study = base_study.disable_experiments(EXPERIMENT_B)
+
+    groups = study.group_by_datetime_ranges(
+        [
+            (
+                datetime(2026, 3, 4, 13, 56, 27),
+                datetime(2026, 3, 4, 14, 2, 2),
+            ),
+        ]
+    )
+
+    assert len(groups) == 1
+    assert groups[0].stems == (EXPERIMENT_A,)
+
+
+def test_group_by_datetime_ranges_can_include_disabled(base_study) -> None:
+    study = base_study.disable_experiments(EXPERIMENT_B)
+
+    groups = study.group_by_datetime_ranges(
+        [
+            (
+                datetime(2026, 3, 4, 13, 56, 27),
+                datetime(2026, 3, 4, 14, 2, 2),
+            ),
+        ],
+        include_disabled=True,
+    )
+
+    assert len(groups) == 1
+    assert groups[0].stems == (EXPERIMENT_A, EXPERIMENT_B)
+
+
+def test_group_by_datetime_ranges_rejects_invalid_range(base_study) -> None:
+    with pytest.raises(
+        ValueError, match="Datetime ranges require start <= end."
+    ):
+        base_study.group_by_datetime_ranges(
+            [
+                (
+                    datetime(2026, 3, 4, 14, 2, 2),
+                    datetime(2026, 3, 4, 13, 56, 27),
+                ),
+            ]
+        )
+
+
+def test_group_by_datetime_ranges_rejects_overlapping_ranges(
+    base_study,
+) -> None:
+    with pytest.raises(ValueError, match="Datetime ranges must not overlap."):
+        base_study.group_by_datetime_ranges(
+            [
+                (
+                    datetime(2026, 3, 4, 13, 56, 27),
+                    datetime(2026, 3, 4, 14, 0, 0),
+                ),
+                (
+                    datetime(2026, 3, 4, 14, 0, 0),
+                    datetime(2026, 3, 4, 14, 2, 2),
+                ),
+            ]
+        )
+
+
 def test_describe_groups_returns_group_summaries(base_study) -> None:
     summaries = base_study.describe_groups()
 
