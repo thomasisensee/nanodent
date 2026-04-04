@@ -1,10 +1,11 @@
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
 from nanodent.analysis.force_peaks import detect_force_peaks
 from nanodent.analysis.oliver_pharr import analyze_oliver_pharr
@@ -17,6 +18,7 @@ from nanodent.plotting import (
     plot_reduced_modulus_over_time,
     save_experiment_plots,
 )
+from nanodent.study import Study
 
 
 def _make_experiment() -> Experiment:
@@ -96,6 +98,37 @@ def test_plot_experiments_draws_attached_oliver_pharr_overlay() -> None:
     assert ax.lines[1].get_label() == "synthetic fit"
     assert ax.lines[2].get_label() == "_nolegend_"
     assert ax.lines[2].get_linestyle() == ":"
+    plt.close(figure)
+
+
+def test_plot_experiments_resolves_groups_via_study() -> None:
+    first = _make_experiment_with_timestamp(datetime(2026, 3, 4, 13, 56, 27))
+    second = replace(
+        _make_experiment_with_timestamp(datetime(2026, 3, 4, 14, 10, 0)),
+        paths=ExperimentPaths(
+            stem="synthetic_2",
+            hld_path=Path("synthetic_2.hld"),
+        ),
+    )
+    study = Study(experiments=(first, second))
+    group = study.group_by_time_gap(max_gap=timedelta(minutes=30))[0]
+    figure, ax = plt.subplots()
+
+    plot_experiments(ax, group, study=study)
+
+    assert len(ax.lines) == 6
+    plt.close(figure)
+
+
+def test_plot_experiments_group_requires_study() -> None:
+    experiment = _make_experiment()
+    study = Study(experiments=(experiment,))
+    group = study.group_by_time_gap()[0]
+    figure, ax = plt.subplots()
+
+    with pytest.raises(TypeError, match="requires passing study"):
+        plot_experiments(ax, group)
+
     plt.close(figure)
 
 

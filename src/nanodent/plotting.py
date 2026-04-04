@@ -29,6 +29,7 @@ PlotSelection = (
 def plot_group_timeline(
     groups: Study | Sequence[ExperimentGroup],
     *,
+    study: Study | None = None,
     max_gap: timedelta = timedelta(minutes=30),
     include_disabled: bool = False,
     cmap: str = "tab10",
@@ -39,7 +40,10 @@ def plot_group_timeline(
     """Plot a static timeline view of automatically grouped experiments."""
 
     resolved_groups = _coerce_timeline_groups(
-        groups, max_gap=max_gap, include_disabled=include_disabled
+        groups,
+        study=study,
+        max_gap=max_gap,
+        include_disabled=include_disabled,
     )
     figure: Figure
     if ax is None:
@@ -60,8 +64,8 @@ def plot_group_timeline(
 
     for index, group in enumerate(resolved_groups):
         color = color_map(index)
-        start_num = mdates.date2num(group.start)
-        end_num = mdates.date2num(group.end)
+        start_num = mdates.date2num(group.experiments[0].timestamp)
+        end_num = mdates.date2num(group.experiments[-1].timestamp)
         width = max(end_num - start_num, 1e-9)
         ax.broken_barh(
             [(start_num, width)],
@@ -103,6 +107,7 @@ def plot_experiments(
     ax: Axes,
     target: PlotSelection,
     *,
+    study: Study | None = None,
     section: str = "test",
     x: str = "disp_nm",
     y: str = "force_uN",
@@ -118,7 +123,10 @@ def plot_experiments(
     """Plot one or more experiment curves onto an existing axes."""
 
     experiments = _coerce_experiments(
-        target, max_gap=max_gap, selection=selection
+        target,
+        study=study,
+        max_gap=max_gap,
+        selection=selection,
     )
     use_force_displacement = (
         section == "test" and x == "disp_nm" and y == "force_uN"
@@ -169,6 +177,7 @@ def plot_hardness_over_time(
     ax: Axes,
     target: PlotSelection,
     *,
+    study: Study | None = None,
     max_gap: timedelta = timedelta(minutes=30),
     selection: Literal["enabled", "disabled", "both"] = "enabled",
     marker: str = "o",
@@ -181,6 +190,7 @@ def plot_hardness_over_time(
     return _plot_scalar_over_time(
         ax,
         target,
+        study=study,
         max_gap=max_gap,
         selection=selection,
         marker=marker,
@@ -201,6 +211,7 @@ def plot_reduced_modulus_over_time(
     ax: Axes,
     target: PlotSelection,
     *,
+    study: Study | None = None,
     max_gap: timedelta = timedelta(minutes=30),
     selection: Literal["enabled", "disabled", "both"] = "enabled",
     marker: str = "o",
@@ -213,6 +224,7 @@ def plot_reduced_modulus_over_time(
     return _plot_scalar_over_time(
         ax,
         target,
+        study=study,
         max_gap=max_gap,
         selection=selection,
         marker=marker,
@@ -233,6 +245,7 @@ def save_experiment_plots(
     groups: PlotSelection,
     output_dir: str | Path,
     *,
+    study: Study | None = None,
     section: str = "test",
     x: str = "disp_nm",
     y: str = "force_uN",
@@ -252,7 +265,10 @@ def save_experiment_plots(
     """Save one plot per experiment using output names from `.hld` files."""
 
     experiments = _coerce_experiments(
-        groups, max_gap=max_gap, selection=selection
+        groups,
+        study=study,
+        max_gap=max_gap,
+        selection=selection,
     )
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
@@ -264,6 +280,7 @@ def save_experiment_plots(
         plot_experiments(
             ax,
             experiment,
+            study=study,
             section=section,
             x=x,
             y=y,
@@ -308,6 +325,7 @@ def _plot_scalar_over_time(
     ax: Axes,
     target: PlotSelection,
     *,
+    study: Study | None,
     max_gap: timedelta,
     selection: Literal["enabled", "disabled", "both"],
     marker: str,
@@ -321,7 +339,10 @@ def _plot_scalar_over_time(
     """Plot one scalar experiment result against acquisition time."""
 
     experiments = _coerce_experiments(
-        target, max_gap=max_gap, selection=selection
+        target,
+        study=study,
+        max_gap=max_gap,
+        selection=selection,
     )
     timestamps: list[float] = []
     values: list[float] = []
@@ -741,38 +762,36 @@ def _shift_axis_value(value: float, onset_offset: float | None) -> float:
 def _coerce_experiments(
     target: PlotSelection,
     *,
+    study: Study | None,
     max_gap: timedelta,
     selection: Literal["enabled", "disabled", "both"],
 ) -> list[Experiment]:
     """Normalize supported plotting inputs into experiments by status."""
 
     if isinstance(target, Study):
-        groups = target.group_by_time_gap(
-            max_gap=max_gap, include_disabled=True
-        )
-        return _select_experiments(
-            [
-                experiment
-                for group in groups
-                for experiment in group.experiments
-            ],
-            selection=selection,
-        )
+        return _select_experiments(target.experiments, selection=selection)
     if isinstance(target, Experiment):
         return _select_experiments([target], selection=selection)
     if isinstance(target, ExperimentGroup):
-        return _select_experiments(target.experiments, selection=selection)
+        resolved_study = _require_group_study(study=study)
+        return _select_experiments(
+            resolved_study.resolve_group(target, include_disabled=True),
+            selection=selection,
+        )
 
     items = list(target)
     if not items:
         return []
     first_item = items[0]
     if isinstance(first_item, ExperimentGroup):
+        resolved_study = _require_group_study(study=study)
         return _select_experiments(
             [
                 experiment
                 for group in items
-                for experiment in group.experiments
+                for experiment in resolved_study.resolve_group(
+                    group, include_disabled=True
+                )
             ],
             selection=selection,
         )
@@ -807,33 +826,71 @@ def _select_experiments(
 def _coerce_timeline_groups(
     groups: Study | Sequence[ExperimentGroup],
     *,
+    study: Study | None,
     max_gap: timedelta,
     include_disabled: bool,
-) -> list[ExperimentGroup]:
+) -> list["_ResolvedExperimentGroup"]:
     """Normalize supported group inputs into timeline-ready groups."""
 
     if isinstance(groups, Study):
-        return groups.group_by_time_gap(
-            max_gap=max_gap, include_disabled=include_disabled
-        )
-    return _filtered_groups(groups, include_disabled=include_disabled)
+        return [
+            _ResolvedExperimentGroup(
+                index=group.index,
+                experiments=group.resolve(
+                    groups,
+                    include_disabled=include_disabled,
+                ),
+            )
+            for group in groups.group_by_time_gap(
+                max_gap=max_gap,
+                include_disabled=include_disabled,
+            )
+        ]
+    return _filtered_groups(
+        groups,
+        study=_require_group_study(study=study),
+        include_disabled=include_disabled,
+    )
 
 
 def _filtered_groups(
-    groups: Sequence[ExperimentGroup], *, include_disabled: bool
-) -> list[ExperimentGroup]:
+    groups: Sequence[ExperimentGroup],
+    *,
+    study: Study,
+    include_disabled: bool,
+) -> list["_ResolvedExperimentGroup"]:
     """Return groups with optional filtering of disabled experiments."""
 
-    filtered: list[ExperimentGroup] = []
+    filtered: list[_ResolvedExperimentGroup] = []
     for group in groups:
-        experiments = tuple(
-            experiment
-            for experiment in group.experiments
-            if include_disabled or experiment.enabled
+        experiments = study.resolve_group(
+            group,
+            include_disabled=include_disabled,
         )
         if not experiments:
             continue
         filtered.append(
-            ExperimentGroup(experiments=experiments, index=group.index)
+            _ResolvedExperimentGroup(
+                index=group.index,
+                experiments=experiments,
+            )
         )
     return filtered
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedExperimentGroup:
+    """A plotting-ready group with concrete experiments."""
+
+    experiments: tuple[Experiment, ...]
+    index: int = 0
+
+
+def _require_group_study(*, study: Study | None) -> Study:
+    """Return the study used to resolve stem-based groups."""
+
+    if study is None:
+        raise TypeError(
+            "Stem-based ExperimentGroup plotting requires passing study=..."
+        )
+    return study
