@@ -1,6 +1,7 @@
 """Matplotlib plotting helpers for experiment data."""
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -240,7 +241,9 @@ def _decorate_saved_experiment_axes(
     ax.set_title(_format_saved_experiment_title(experiment))
     if not _uses_force_displacement_axes(section=section, x=x, y=y):
         return
-    _add_saved_plot_top_axis(ax, experiment=experiment)
+    events = _saved_plot_annotation_events(experiment)
+    _add_saved_plot_top_axis(ax, events=events)
+    _add_saved_plot_right_axis(ax, events=events)
 
 
 def _plot_oliver_pharr_overlay(
@@ -306,10 +309,20 @@ def _format_saved_experiment_title(experiment: Experiment) -> str:
     return f"{title} | S={stiffness:.2f} uN/nm"
 
 
-def _add_saved_plot_top_axis(ax: Axes, *, experiment: Experiment) -> None:
+@dataclass(frozen=True, slots=True)
+class _SavedPlotAnnotationEvent:
+    """One saved-plot annotation event with aligned plot coordinates."""
+
+    disp_nm: float
+    force_uN: float
+
+
+def _add_saved_plot_top_axis(
+    ax: Axes, *, events: Sequence[_SavedPlotAnnotationEvent]
+) -> None:
     """Add a top displacement axis marking onset and maximum force."""
 
-    tick_positions, tick_labels = _saved_plot_top_axis_ticks(experiment)
+    tick_positions, tick_labels = _saved_plot_top_axis_ticks(events)
     if not tick_positions:
         return
 
@@ -324,50 +337,110 @@ def _add_saved_plot_top_axis(ax: Axes, *, experiment: Experiment) -> None:
 
 
 def _saved_plot_top_axis_ticks(
-    experiment: Experiment,
+    events: Sequence[_SavedPlotAnnotationEvent],
 ) -> tuple[list[float], list[str]]:
     """Return displacement positions and labels for saved-plot top ticks."""
 
-    tick_positions: list[float] = []
-
-    onset = experiment.onset
-    if onset is not None and onset.success and onset.onset_disp_nm is not None:
-        tick_positions.append(float(onset.onset_disp_nm))
-
-    force_peaks = experiment.force_peaks
-    if force_peaks is not None and force_peaks.success:
-        tick_positions.extend(
-            float(peak.disp_nm)
-            for peak in force_peaks.peaks
-            if peak.disp_nm is not None
-        )
-
-    max_force_disp = _max_force_disp_nm(experiment)
-    if max_force_disp is not None:
-        tick_positions.append(max_force_disp)
-
-    unique_positions = _unique_sorted_tick_positions(tick_positions)
+    unique_positions = _unique_sorted_tick_positions(
+        [event.disp_nm for event in events]
+    )
     return (
         unique_positions,
         [_format_disp_tick(position) for position in unique_positions],
     )
 
 
-def _max_force_disp_nm(experiment: Experiment) -> float | None:
-    """Return the displacement at the raw maximum-force sample."""
+def _add_saved_plot_right_axis(
+    ax: Axes, *, events: Sequence[_SavedPlotAnnotationEvent]
+) -> None:
+    """Add a right force axis aligned to saved-plot annotation events."""
+
+    tick_positions, tick_labels = _saved_plot_right_axis_ticks(events)
+    if not tick_positions:
+        return
+
+    right_ax = ax.twinx()
+    right_ax.set_ylim(ax.get_ylim())
+    right_ax.set_yticks(tick_positions)
+    right_ax.set_yticklabels(tick_labels)
+    right_ax.yaxis.set_ticks_position("right")
+    right_ax.yaxis.set_label_position("right")
+    right_ax.set_ylabel("")
+    right_ax.grid(False)
+
+
+def _saved_plot_right_axis_ticks(
+    events: Sequence[_SavedPlotAnnotationEvent],
+) -> tuple[list[float], list[str]]:
+    """Return force positions and labels for saved-plot right ticks."""
+
+    unique_positions = _unique_sorted_tick_positions(
+        [event.force_uN for event in events]
+    )
+    return (
+        unique_positions,
+        [_format_force_tick(position) for position in unique_positions],
+    )
+
+
+def _saved_plot_annotation_events(
+    experiment: Experiment,
+) -> list[_SavedPlotAnnotationEvent]:
+    """Return saved-plot annotation events as displacement-force pairs."""
 
     force = np.asarray(experiment.test["force_uN"], dtype=np.float64)
     disp = np.asarray(experiment.test["disp_nm"], dtype=np.float64)
     if len(force) == 0 or len(disp) == 0:
-        return None
+        return []
+
+    events: list[_SavedPlotAnnotationEvent] = []
+    onset = experiment.onset
+    if (
+        onset is not None
+        and onset.success
+        and onset.onset_index is not None
+        and onset.onset_disp_nm is not None
+    ):
+        onset_index = int(onset.onset_index)
+        if 0 <= onset_index < len(force):
+            events.append(
+                _SavedPlotAnnotationEvent(
+                    disp_nm=float(onset.onset_disp_nm),
+                    force_uN=float(force[onset_index]),
+                )
+            )
+
+    force_peaks = experiment.force_peaks
+    if force_peaks is not None and force_peaks.success:
+        events.extend(
+            _SavedPlotAnnotationEvent(
+                disp_nm=float(peak.disp_nm),
+                force_uN=float(peak.force_uN),
+            )
+            for peak in force_peaks.peaks
+            if peak.disp_nm is not None
+        )
+
     max_index = int(np.argmax(force))
-    return float(disp[max_index])
+    events.append(
+        _SavedPlotAnnotationEvent(
+            disp_nm=float(disp[max_index]),
+            force_uN=float(force[max_index]),
+        )
+    )
+    return events
 
 
 def _format_disp_tick(value_nm: float) -> str:
     """Return a compact displacement label for top-axis ticks."""
 
     return f"{float(value_nm):.3g}"
+
+
+def _format_force_tick(value_uN: float) -> str:
+    """Return a compact force label for right-axis ticks."""
+
+    return f"{float(value_uN):.3g}"
 
 
 def _unique_sorted_tick_positions(

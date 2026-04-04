@@ -107,6 +107,7 @@ def test_saved_plot_decoration_adds_top_axis_and_stiffness_title() -> None:
     experiment = _make_experiment()
     figure, ax = plt.subplots()
     ax.set_xlim(0.0, 120.0)
+    ax.set_ylim(0.0, 550.0)
 
     _decorate_saved_experiment_axes(
         ax,
@@ -117,10 +118,15 @@ def test_saved_plot_decoration_adds_top_axis_and_stiffness_title() -> None:
     )
 
     assert ax.get_title() == "synthetic | S=5.00 uN/nm"
-    assert len(figure.axes) == 2
+    assert len(figure.axes) == 3
     top_ax = figure.axes[1]
+    right_ax = figure.axes[2]
     top_tick_labels = [tick.get_text() for tick in top_ax.get_xticklabels()]
     top_tick_positions = list(top_ax.get_xticks())
+    right_tick_labels = [
+        tick.get_text() for tick in right_ax.get_yticklabels()
+    ]
+    right_tick_positions = list(right_ax.get_yticks())
     raw_positions = [float(experiment.onset.onset_disp_nm)]
     raw_positions.extend(
         float(peak.disp_nm) for peak in experiment.force_peaks.peaks
@@ -139,9 +145,27 @@ def test_saved_plot_decoration_adds_top_axis_and_stiffness_title() -> None:
             continue
         expected_positions.append(position)
     expected_labels = [f"{position:.3g}" for position in expected_positions]
+    raw_forces = [
+        float(experiment.test["force_uN"][experiment.onset.onset_index])
+    ]
+    raw_forces.extend(
+        float(peak.force_uN) for peak in experiment.force_peaks.peaks
+    )
+    raw_forces.append(float(np.max(experiment.test["force_uN"])))
+    expected_forces: list[float] = []
+    for force in sorted(raw_forces):
+        if any(
+            np.isclose(force, existing, atol=1e-12)
+            for existing in expected_forces
+        ):
+            continue
+        expected_forces.append(force)
+    expected_force_labels = [f"{force:.3g}" for force in expected_forces]
 
     assert top_tick_positions == expected_positions
     assert top_tick_labels == expected_labels
+    assert right_tick_positions == expected_forces
+    assert right_tick_labels == expected_force_labels
     plt.close(figure)
 
 
@@ -175,5 +199,5 @@ def test_saved_plot_decoration_uses_stem_only_without_stiffness() -> None:
     )
 
     assert ax.get_title() == "synthetic"
-    assert len(figure.axes) == 2
+    assert len(figure.axes) == 3
     plt.close(figure)
