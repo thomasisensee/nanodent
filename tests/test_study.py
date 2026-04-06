@@ -1,10 +1,11 @@
 from dataclasses import replace
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from nanodent.models import SignalTable
+from nanodent.models import ExperimentPaths, SignalTable
 from nanodent.study import Study
 
 EXPERIMENT_A = "experiment_a"
@@ -586,20 +587,168 @@ def test_detect_force_peaks_preserves_unselected_results(
     assert by_stem[EXPERIMENT_A].force_peaks is not None
 
 
-def test_experiment_table_collects_scalar_results(base_study) -> None:
+def test_scalar_series_returns_timestamped_rows(base_study) -> None:
     analyzed = (
         base_study.detect_onset().detect_force_peaks().analyze_oliver_pharr()
     )
+    expected = [
+        {
+            "timestamp": experiment.timestamp,
+            "stem": experiment.stem,
+            "value": experiment.oliver_pharr.hardness_uN_per_nm2,
+        }
+        for experiment in analyzed.experiments
+        if experiment.oliver_pharr is not None
+        and experiment.oliver_pharr.hardness_uN_per_nm2 is not None
+    ]
 
-    rows = analyzed.experiment_table()
+    rows = analyzed.scalar_series("hardness")
 
-    assert len(rows) == 4
-    assert rows[0]["stem"] == EXPERIMENT_A
-    assert rows[0]["timestamp"] == analyzed.experiments[0].timestamp
-    assert rows[0]["onset_success"] == analyzed.experiments[0].onset.success
-    assert rows[0]["force_peak_count"] == (
-        analyzed.experiments[0].force_peaks.peak_count
+    assert rows == expected
+
+
+def test_scalar_series_can_keep_missing_values(base_study) -> None:
+    rows = base_study.scalar_series("hardness", drop_missing=False)
+
+    assert len(rows) == len(base_study.experiments)
+    assert all(row["value"] is None for row in rows)
+
+
+def test_scalar_series_respects_enabled_filter(base_study) -> None:
+    study = base_study.disable_experiments(EXPERIMENT_A).detect_onset(
+        include_disabled=True
     )
-    assert rows[0]["hardness_uN_per_nm2"] == (
-        analyzed.experiments[0].oliver_pharr.hardness_uN_per_nm2
+
+    enabled_rows = study.scalar_series("onset_disp")
+    all_rows = study.scalar_series("onset_disp", include_disabled=True)
+
+    assert [row["stem"] for row in enabled_rows] == [
+        EXPERIMENT_B,
+        EXPERIMENT_C,
+        EXPERIMENT_D,
+    ]
+    assert [row["stem"] for row in all_rows] == [
+        EXPERIMENT_A,
+        EXPERIMENT_B,
+        EXPERIMENT_C,
+        EXPERIMENT_D,
+    ]
+
+
+def test_scalar_series_rejects_unknown_metrics(base_study) -> None:
+    with pytest.raises(ValueError, match="Unknown scalar metric"):
+        base_study.scalar_series("not_a_metric")
+
+
+def test_save_and_load_session_restores_results(
+    base_study, tmp_path: Path
+) -> None:
+    session_path = tmp_path / "study-session.pkl"
+    saved = (
+        base_study.disable_experiments(EXPERIMENT_A, reason="manual")
+        .detect_onset(
+            include_disabled=True,
+            smoothing={"window_length": 5, "polyorder": 1},
+        )
+        .detect_force_peaks(include_disabled=True)
+        .analyze_oliver_pharr(include_disabled=True)
     )
+
+    saved_path = saved.save_session(session_path)
+    restored = base_study.load_session(saved_path)
+    by_stem = {
+        experiment.stem: experiment for experiment in restored.experiments
+    }
+
+    assert saved_path == session_path
+    assert session_path.exists()
+    assert by_stem[EXPERIMENT_A].enabled is False
+    assert by_stem[EXPERIMENT_A].disabled_reason == "manual"
+    assert by_stem[EXPERIMENT_A].onset is not None
+    assert dict(by_stem[EXPERIMENT_A].onset.smoothing or {}) == {
+        "window_length": 5,
+        "polyorder": 1,
+    }
+    assert by_stem[EXPERIMENT_B].force_peaks is not None
+    assert by_stem[EXPERIMENT_B].oliver_pharr is not None
+
+
+def test_load_session_keeps_current_results_without_overwrite(
+    base_study, tmp_path: Path
+) -> None:
+    session_path = tmp_path / "study-session.pkl"
+    saved = base_study.detect_onset(
+        baseline_points=7,
+        include_disabled=True,
+    )
+    current = base_study.detect_onset(
+        baseline_points=4,
+        include_disabled=True,
+    )
+    saved.save_session(session_path)
+
+    with pytest.warns(UserWarning, match="Kept current onset"):
+        restored = current.load_session(session_path)
+
+    assert restored.experiments[0].onset.baseline_points == 4
+
+
+def test_load_session_overwrite_applies_saved_results(
+    base_study, tmp_path: Path
+) -> None:
+    session_path = tmp_path / "study-session.pkl"
+    saved = base_study.detect_onset(
+        baseline_points=7,
+        include_disabled=True,
+    )
+    current = base_study.detect_onset(
+        baseline_points=4,
+        include_disabled=True,
+    )
+    saved.save_session(session_path)
+
+    restored = current.load_session(session_path, overwrite=True)
+
+    assert restored.experiments[0].onset.baseline_points == 7
+
+
+def test_load_session_warns_about_missing_saved_stems(
+    base_study, tmp_path: Path
+) -> None:
+    session_path = tmp_path / "study-session.pkl"
+    saved = base_study.detect_onset(include_disabled=True)
+    partial_study = Study(experiments=(base_study.experiments[0],))
+    saved.save_session(session_path)
+
+    with pytest.warns(
+        UserWarning,
+        match="current study does not contain those stems",
+    ):
+        restored = partial_study.load_session(session_path)
+
+    assert len(restored.experiments) == 1
+    assert restored.experiments[0].onset is not None
+
+
+def test_load_session_warns_on_timestamp_and_filename_mismatch(
+    base_study, tmp_path: Path
+) -> None:
+    session_path = tmp_path / "study-session.pkl"
+    saved = base_study.detect_onset(include_disabled=True)
+    modified_first = replace(
+        base_study.experiments[0],
+        timestamp=datetime(2030, 1, 1, 0, 0, 0),
+        paths=ExperimentPaths(
+            stem=base_study.experiments[0].stem,
+            hld_path=Path("renamed_file.hld"),
+        ),
+    )
+    current = Study(experiments=(modified_first, *base_study.experiments[1:]))
+    saved.save_session(session_path)
+
+    with pytest.warns(UserWarning) as warning_records:
+        current.load_session(session_path)
+
+    messages = [str(record.message) for record in warning_records]
+    assert any("timestamp mismatches" in message for message in messages)
+    assert any("filename mismatches" in message for message in messages)

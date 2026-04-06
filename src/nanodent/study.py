@@ -1,9 +1,13 @@
 """Study-level containers and grouping utilities."""
 
+import pickle
 import warnings
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from datetime import datetime, timedelta
+from importlib import metadata
+from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from nanodent.analysis.force_peaks import (
@@ -15,6 +19,10 @@ from nanodent.analysis.oliver_pharr import (
 from nanodent.analysis.onset import detect_onset as _detect_onset
 from nanodent.analysis.quality import classify_quality as _classify_quality
 from nanodent.models import Experiment
+
+_SESSION_FORMAT_VERSION = 1
+_DEFAULT_ENABLED = True
+_DEFAULT_DISABLED_REASON = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,21 +510,149 @@ class Study:
             include_disabled=include_disabled,
         )
 
-    def experiment_table(
+    def scalar_series(
         self,
+        metric: str,
         *,
         stems: Iterable[str] | str | None = None,
         include_disabled: bool = False,
+        drop_missing: bool = True,
     ) -> list[dict[str, Any]]:
-        """Return one scalar summary row per selected experiment."""
+        """Return timestamped scalar rows for one supported metric."""
 
-        return [
-            _experiment_table_row(experiment)
-            for experiment in self.get_experiments(
-                stems=stems,
-                include_disabled=include_disabled,
+        getter = _scalar_metric_getter(metric)
+        rows: list[dict[str, Any]] = []
+        for experiment in self.get_experiments(
+            stems=stems,
+            include_disabled=include_disabled,
+        ):
+            value = getter(experiment)
+            if value is None and drop_missing:
+                continue
+            rows.append(
+                {
+                    "timestamp": experiment.timestamp,
+                    "stem": experiment.stem,
+                    "value": value,
+                }
             )
+        return rows
+
+    def save_session(self, path: str | Path) -> Path:
+        """Persist experiment flags and attached analysis results."""
+
+        destination = Path(path)
+        payload = {
+            "format_version": _SESSION_FORMAT_VERSION,
+            "package_version": _package_version(),
+            "saved_at": datetime.now(),
+            "experiment_count": len(self.experiments),
+            "experiments": {
+                experiment.stem: _session_entry(experiment)
+                for experiment in self.experiments
+            },
+        }
+        with destination.open("wb") as handle:
+            pickle.dump(_make_pickle_safe(payload), handle, protocol=4)
+        return destination
+
+    def load_session(
+        self,
+        path: str | Path,
+        *,
+        overwrite: bool = False,
+    ) -> "Study":
+        """Apply a previously saved analysis session onto this study."""
+
+        source = Path(path)
+        with source.open("rb") as handle:
+            payload = pickle.load(handle)
+        experiments_payload = dict(payload.get("experiments", {}))
+
+        missing_stems = [
+            stem
+            for stem in experiments_payload
+            if stem not in self._experiments_by_stem()
         ]
+        self._warn_missing_session_stems(missing_stems)
+
+        timestamp_mismatches: list[str] = []
+        file_mismatches: list[str] = []
+        state_conflicts: dict[str, list[str]] = {
+            "enabled state": [],
+            "onset": [],
+            "force peaks": [],
+            "Oliver-Pharr": [],
+        }
+
+        updated: list[Experiment] = []
+        for experiment in self.experiments:
+            saved = experiments_payload.get(experiment.stem)
+            if saved is None:
+                updated.append(experiment)
+                continue
+
+            if saved.get("timestamp") != experiment.timestamp:
+                timestamp_mismatches.append(experiment.stem)
+            if saved.get("hld_name") != experiment.paths.hld_path.name:
+                file_mismatches.append(experiment.stem)
+
+            current = experiment
+            current, enabled_conflict = _apply_enabled_state(
+                current,
+                saved_enabled=bool(saved.get("enabled", _DEFAULT_ENABLED)),
+                saved_reason=saved.get(
+                    "disabled_reason", _DEFAULT_DISABLED_REASON
+                ),
+                overwrite=overwrite,
+            )
+            if enabled_conflict:
+                state_conflicts["enabled state"].append(experiment.stem)
+
+            current, onset_conflict = _apply_saved_analysis_result(
+                current,
+                saved_result=saved.get("onset"),
+                current_result=current.onset,
+                overwrite=overwrite,
+                result_name="onset",
+            )
+            if onset_conflict:
+                state_conflicts["onset"].append(experiment.stem)
+
+            current, peaks_conflict = _apply_saved_analysis_result(
+                current,
+                saved_result=saved.get("force_peaks"),
+                current_result=current.force_peaks,
+                overwrite=overwrite,
+                result_name="force_peaks",
+            )
+            if peaks_conflict:
+                state_conflicts["force peaks"].append(experiment.stem)
+
+            current, oliver_conflict = _apply_saved_analysis_result(
+                current,
+                saved_result=saved.get("oliver_pharr"),
+                current_result=current.oliver_pharr,
+                overwrite=overwrite,
+                result_name="oliver_pharr",
+            )
+            if oliver_conflict:
+                state_conflicts["Oliver-Pharr"].append(experiment.stem)
+            updated.append(current)
+
+        self._warn_session_mismatches(
+            mismatch_name="timestamp",
+            stems=timestamp_mismatches,
+        )
+        self._warn_session_mismatches(
+            mismatch_name="filename",
+            stems=file_mismatches,
+        )
+        self._warn_session_conflicts(
+            state_conflicts=state_conflicts,
+            overwrite=overwrite,
+        )
+        return Study(experiments=tuple(updated))
 
     def _selected_stem_set(
         self,
@@ -567,6 +703,53 @@ class Study:
             f"experiment(s) because {reason}: {', '.join(stems)}.",
             stacklevel=2,
         )
+
+    def _warn_missing_session_stems(self, stems: Sequence[str]) -> None:
+        """Warn when a saved session contains stems absent from the study."""
+
+        if not stems:
+            return
+        warnings.warn(
+            f"Skipped {len(stems)} saved experiment(s) because the current "
+            f"study does not contain those stems: {', '.join(stems)}.",
+            stacklevel=2,
+        )
+
+    def _warn_session_mismatches(
+        self,
+        *,
+        mismatch_name: str,
+        stems: Sequence[str],
+    ) -> None:
+        """Warn when saved metadata does not match the current study."""
+
+        if not stems:
+            return
+        warnings.warn(
+            f"Found {mismatch_name} mismatches for {len(stems)} "
+            f"experiment(s) while loading the session: {', '.join(stems)}.",
+            stacklevel=2,
+        )
+
+    def _warn_session_conflicts(
+        self,
+        *,
+        state_conflicts: Mapping[str, Sequence[str]],
+        overwrite: bool,
+    ) -> None:
+        """Warn once per state type when saved values were not applied."""
+
+        if overwrite:
+            return
+        for state_name, stems in state_conflicts.items():
+            if not stems:
+                continue
+            warnings.warn(
+                f"Kept current {state_name} for {len(stems)} experiment(s) "
+                f"instead of the saved session state: {', '.join(stems)}. "
+                "Pass overwrite=True to apply the saved state.",
+                stacklevel=2,
+            )
 
     def _experiments_by_stem(self) -> dict[str, Experiment]:
         """Return study experiments keyed by stem."""
@@ -637,52 +820,160 @@ def _has_successful_result(result: Any) -> bool:
     return result is not None and bool(getattr(result, "success", False))
 
 
-def _experiment_table_row(experiment: Experiment) -> dict[str, Any]:
-    """Return one notebook-friendly scalar row for an experiment."""
+def _scalar_metric_getter(metric: str) -> Any:
+    """Return the accessor function for a supported scalar metric."""
 
-    onset = experiment.onset
-    force_peaks = experiment.force_peaks
-    oliver_pharr = experiment.oliver_pharr
+    registry = {
+        "hardness": lambda experiment: (
+            None
+            if experiment.oliver_pharr is None
+            else experiment.oliver_pharr.hardness_uN_per_nm2
+        ),
+        "reduced_modulus": lambda experiment: (
+            None
+            if experiment.oliver_pharr is None
+            else experiment.oliver_pharr.reduced_modulus_uN_per_nm2
+        ),
+        "stiffness": lambda experiment: (
+            None
+            if experiment.oliver_pharr is None
+            else experiment.oliver_pharr.stiffness_uN_per_nm
+        ),
+        "onset_disp": lambda experiment: (
+            None
+            if experiment.onset is None
+            else experiment.onset.onset_disp_nm
+        ),
+        "onset_time": lambda experiment: (
+            None if experiment.onset is None else experiment.onset.onset_time_s
+        ),
+        "force_peak_count": lambda experiment: (
+            None
+            if experiment.force_peaks is None
+            else experiment.force_peaks.peak_count
+        ),
+    }
+    if metric not in registry:
+        raise ValueError(
+            "Unknown scalar metric. Supported metrics are: "
+            f"{', '.join(sorted(registry))}."
+        )
+    return registry[metric]
+
+
+def _package_version() -> str:
+    """Return the installed package version when available."""
+
+    try:
+        return metadata.version("nanodent")
+    except metadata.PackageNotFoundError:
+        return "0.0.0"
+
+
+def _session_entry(experiment: Experiment) -> dict[str, Any]:
+    """Return the persisted session state for one experiment."""
+
     return {
-        "stem": experiment.stem,
         "timestamp": experiment.timestamp,
+        "hld_name": experiment.paths.hld_path.name,
         "enabled": experiment.enabled,
         "disabled_reason": experiment.disabled_reason,
-        "temperature_c": experiment.temperature_c,
-        "humidity_percent": experiment.humidity_percent,
-        "onset_success": None if onset is None else onset.success,
-        "onset_reason": None if onset is None else onset.reason,
-        "onset_index": None if onset is None else onset.onset_index,
-        "onset_time_s": None if onset is None else onset.onset_time_s,
-        "onset_disp_nm": None if onset is None else onset.onset_disp_nm,
-        "force_peaks_success": None
-        if force_peaks is None
-        else force_peaks.success,
-        "force_peaks_reason": None
-        if force_peaks is None
-        else force_peaks.reason,
-        "force_peak_count": None
-        if force_peaks is None
-        else force_peaks.peak_count,
-        "oliver_pharr_success": None
-        if oliver_pharr is None
-        else oliver_pharr.success,
-        "oliver_pharr_reason": None
-        if oliver_pharr is None
-        else oliver_pharr.reason,
-        "stiffness_uN_per_nm": None
-        if oliver_pharr is None
-        else oliver_pharr.stiffness_uN_per_nm,
-        "hardness_success": None
-        if oliver_pharr is None
-        else oliver_pharr.hardness_success,
-        "hardness_reason": None
-        if oliver_pharr is None
-        else oliver_pharr.hardness_reason,
-        "hardness_uN_per_nm2": None
-        if oliver_pharr is None
-        else oliver_pharr.hardness_uN_per_nm2,
-        "reduced_modulus_uN_per_nm2": None
-        if oliver_pharr is None
-        else oliver_pharr.reduced_modulus_uN_per_nm2,
+        "onset": _make_pickle_safe(experiment.onset),
+        "force_peaks": _make_pickle_safe(experiment.force_peaks),
+        "oliver_pharr": _make_pickle_safe(experiment.oliver_pharr),
     }
+
+
+def _make_pickle_safe(value: Any) -> Any:
+    """Recursively replace non-picklable immutable views with plain values."""
+
+    if value is None:
+        return None
+    if isinstance(value, MappingProxyType):
+        return {key: _make_pickle_safe(item) for key, item in value.items()}
+    if is_dataclass(value) and not isinstance(value, type):
+        return type(value)(
+            **{
+                field.name: _make_pickle_safe(getattr(value, field.name))
+                for field in fields(value)
+            }
+        )
+    if isinstance(value, tuple):
+        return tuple(_make_pickle_safe(item) for item in value)
+    if isinstance(value, list):
+        return [_make_pickle_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            _make_pickle_safe(key): _make_pickle_safe(item)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _apply_enabled_state(
+    experiment: Experiment,
+    *,
+    saved_enabled: bool,
+    saved_reason: str | None,
+    overwrite: bool,
+) -> tuple[Experiment, bool]:
+    """Apply saved enabled state unless current manual state should win."""
+
+    current_is_default = (
+        experiment.enabled is _DEFAULT_ENABLED
+        and experiment.disabled_reason == _DEFAULT_DISABLED_REASON
+    )
+    saved_matches_current = (
+        experiment.enabled == saved_enabled
+        and experiment.disabled_reason == saved_reason
+    )
+    if overwrite or current_is_default or saved_matches_current:
+        return (
+            experiment.with_enabled(saved_enabled, reason=saved_reason),
+            False,
+        )
+    return experiment, True
+
+
+def _apply_saved_analysis_result(
+    experiment: Experiment,
+    *,
+    saved_result: Any,
+    current_result: Any,
+    overwrite: bool,
+    result_name: str,
+) -> tuple[Experiment, bool]:
+    """Apply a saved analysis result when the conflict policy allows it."""
+
+    if saved_result is None:
+        if overwrite:
+            return _replace_analysis_result(
+                experiment,
+                result_name=result_name,
+                result=None,
+            ), False
+        return experiment, False
+    if current_result is not None and not overwrite:
+        return experiment, True
+    return _replace_analysis_result(
+        experiment,
+        result_name=result_name,
+        result=saved_result,
+    ), False
+
+
+def _replace_analysis_result(
+    experiment: Experiment,
+    *,
+    result_name: str,
+    result: Any,
+) -> Experiment:
+    """Return an experiment with one attached analysis result replaced."""
+
+    if result_name == "onset":
+        return experiment.with_onset(result)
+    if result_name == "force_peaks":
+        return experiment.with_force_peaks(result)
+    if result_name == "oliver_pharr":
+        return experiment.with_oliver_pharr(result)
+    raise ValueError(f"Unknown analysis result {result_name!r}.")

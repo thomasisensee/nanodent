@@ -51,6 +51,7 @@ study = load_folder("path/to/experiment-folder")
 filtered_study = study.classify_quality()
 filtered_study = filtered_study.analyze_oliver_pharr()
 summaries = filtered_study.describe_groups()
+hardness_rows = filtered_study.scalar_series("hardness")
 manual_groups = filtered_study.group_by_datetime_ranges(
     [
         (
@@ -89,6 +90,11 @@ plot_reduced_modulus_over_time(ax_er, filtered_study)
 saved = save_experiment_plots(
     filtered_study, "plots/", zero_onset=False
 )
+
+filtered_study.save_session("analysis-session.pkl")
+resumed_study = load_folder("path/to/experiment-folder").load_session(
+    "analysis-session.pkl"
+)
 ```
 
 `Study.classify_quality()` keeps all experiments loaded but marks
@@ -105,6 +111,9 @@ The public API also exposes:
 - `load_experiment(path) -> Experiment`
 - `load_folder(path) -> Study`
 - `Study.analyze_oliver_pharr(...) -> Study`
+- `Study.scalar_series(...) -> list[dict[str, Any]]`
+- `Study.save_session(path) -> Path`
+- `Study.load_session(path) -> Study`
 - `Study.group_by_datetime_ranges(...) -> list[ExperimentGroup]`
 - `Study.group_by_time_gap(...) -> list[ExperimentGroup]`
 - `Study.describe_groups(...) -> list[dict[str, Any]]`
