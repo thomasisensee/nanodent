@@ -780,3 +780,24 @@ def test_load_session_warns_on_timestamp_and_filename_mismatch(
     messages = [str(record.message) for record in warning_records]
     assert any("timestamp mismatches" in message for message in messages)
     assert any("filename mismatches" in message for message in messages)
+
+
+def test_save_and_load_session_supports_experiments_without_file_paths(
+    base_study, tmp_path: Path
+) -> None:
+    session_path = tmp_path / "generic-session.pkl"
+    generic_experiment = replace(
+        base_study.experiments[0],
+        paths=None,
+        source_path=None,
+        source_format=None,
+    )
+    study = Study(experiments=(generic_experiment,)).detect_onset()
+
+    study.save_session(session_path)
+    restored = Study(experiments=(generic_experiment,)).load_session(
+        session_path
+    )
+
+    assert restored.experiments[0].stem == generic_experiment.stem
+    assert restored.experiments[0].onset is not None

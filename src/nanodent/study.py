@@ -237,7 +237,7 @@ class Study:
 
         classified: list[Experiment] = []
         for experiment in self.experiments:
-            test_section = experiment.section("test")
+            test_section = experiment.trace
             result = _classify_quality(
                 test_section["disp_nm"],
                 test_section["force_uN"],
@@ -296,8 +296,8 @@ class Study:
             experiments.append(
                 experiment.with_oliver_pharr(
                     _analyze_oliver_pharr(
-                        experiment.section("test")["disp_nm"],
-                        experiment.section("test")["force_uN"],
+                        experiment.trace["disp_nm"],
+                        experiment.trace["force_uN"],
                         unloading_fraction=unloading_fraction,
                         smoothing=smoothing,
                         fit_num_points=fit_num_points,
@@ -354,9 +354,9 @@ class Study:
 
             updated = experiment.with_onset(
                 _detect_onset(
-                    experiment.section("test")["force_uN"],
-                    time_s=experiment.section("test")["time_s"],
-                    disp_nm=experiment.section("test")["disp_nm"],
+                    experiment.trace["force_uN"],
+                    time_s=experiment.trace["time_s"],
+                    disp_nm=experiment.trace["disp_nm"],
                     mode=mode,
                     baseline_points=baseline_points,
                     baseline_start_index=baseline_start_index,
@@ -412,9 +412,9 @@ class Study:
             experiments.append(
                 experiment.with_force_peaks(
                     _detect_force_peaks(
-                        experiment.section("test")["force_uN"],
-                        time_s=experiment.section("test")["time_s"],
-                        disp_nm=experiment.section("test")["disp_nm"],
+                        experiment.trace["force_uN"],
+                        time_s=experiment.trace["time_s"],
+                        disp_nm=experiment.trace["disp_nm"],
                         prominence=prominence,
                         threshold=threshold,
                     )
@@ -586,7 +586,8 @@ class Study:
 
             if saved.get("timestamp") != experiment.timestamp:
                 timestamp_mismatches.append(experiment.stem)
-            if saved.get("hld_name") != experiment.paths.hld_path.name:
+            saved_source_name = saved.get("source_name", saved.get("hld_name"))
+            if saved_source_name != _experiment_source_name(experiment):
                 file_mismatches.append(experiment.stem)
 
             current = experiment
@@ -867,7 +868,8 @@ def _session_entry(experiment: Experiment) -> dict[str, Any]:
 
     return {
         "timestamp": experiment.timestamp,
-        "hld_name": experiment.paths.hld_path.name,
+        "source_name": _experiment_source_name(experiment),
+        "hld_name": _experiment_source_name(experiment),
         "enabled": experiment.enabled,
         "disabled_reason": experiment.disabled_reason,
         "onset": _make_pickle_safe(experiment.onset),
@@ -969,3 +971,13 @@ def _replace_analysis_result(
     if result_name == "oliver_pharr":
         return experiment.with_oliver_pharr(result)
     raise ValueError(f"Unknown analysis result {result_name!r}.")
+
+
+def _experiment_source_name(experiment: Experiment) -> str | None:
+    """Return the best available source identifier for one experiment."""
+
+    if experiment.source_path is not None:
+        return experiment.source_path.name
+    if experiment.paths is not None:
+        return experiment.paths.hld_path.name
+    return None

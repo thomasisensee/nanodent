@@ -242,8 +242,9 @@ def save_experiment_plots(
         ax.grid(alpha=0.2)
         figure.tight_layout()
 
-        output_path = (
-            destination / experiment.paths.hld_path.with_suffix(suffix).name
+        output_path = destination / _experiment_output_name(
+            experiment,
+            suffix=suffix,
         )
         figure.savefig(output_path, dpi=dpi)
         saved_paths.append(output_path)
@@ -511,8 +512,8 @@ def _saved_plot_annotation_events(
 ) -> list[_SavedPlotAnnotationEvent]:
     """Return saved-plot annotation events as displacement-force pairs."""
 
-    force = np.asarray(experiment.test["force_uN"], dtype=np.float64)
-    disp = np.asarray(experiment.test["disp_nm"], dtype=np.float64)
+    force = np.asarray(experiment.trace["force_uN"], dtype=np.float64)
+    disp = np.asarray(experiment.trace["disp_nm"], dtype=np.float64)
     if len(force) == 0 or len(disp) == 0:
         return []
 
@@ -617,6 +618,20 @@ def _oliver_pharr_extension_segment(
     end_x = _shift_axis_value(end_x, onset_offset)
     end_y = float(fit_result.y_fit[0])
     return [start_x, end_x], [start_y, end_y]
+
+
+def _experiment_output_name(
+    experiment: Experiment,
+    *,
+    suffix: str,
+) -> str:
+    """Return the output filename used for one saved experiment plot."""
+
+    if experiment.source_path is not None:
+        return experiment.source_path.with_suffix(suffix).name
+    if experiment.paths is not None:
+        return experiment.paths.hld_path.with_suffix(suffix).name
+    return f"{experiment.stem}{suffix}"
 
 
 class _PreparedCurve:

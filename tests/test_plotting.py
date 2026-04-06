@@ -379,3 +379,20 @@ def test_save_experiment_plots_can_zero_onset(tmp_path: Path) -> None:
 
     assert saved_paths == [tmp_path / "synthetic.png"]
     assert saved_paths[0].exists()
+
+
+def test_save_experiment_plots_uses_stem_without_source_path(
+    tmp_path: Path,
+) -> None:
+    experiment = replace(
+        _make_experiment(),
+        stem="generic_synthetic",
+        paths=None,
+        source_path=None,
+        source_format=None,
+    )
+
+    saved_paths = save_experiment_plots(experiment, tmp_path)
+
+    assert saved_paths == [tmp_path / "generic_synthetic.png"]
+    assert saved_paths[0].exists()
