@@ -381,6 +381,38 @@ def test_detect_onset_can_include_disabled_experiments(base_study) -> None:
     assert by_stem[EXPERIMENT_A].onset.onset_disp_nm is not None
 
 
+def test_detect_onset_forwards_mode_and_baseline_window(base_study) -> None:
+    test_section = SignalTable(
+        columns={
+            "time_s": np.arange(7, dtype=np.float64),
+            "disp_nm": np.linspace(0.0, 6.0, 7, dtype=np.float64),
+            "force_uN": np.array(
+                [5.0, 5.0, 0.0, 0.0, 0.2, 0.7, 1.2],
+                dtype=np.float64,
+            ),
+        },
+        point_count=7,
+        raw_columns=("Time_s", "Disp_nm", "Force_uN"),
+    )
+    experiment = replace(base_study.experiments[0], test=test_section)
+
+    analyzed = Study(experiments=(experiment,)).detect_onset(
+        mode="absolute",
+        baseline_start_index=2,
+        baseline_end_index=4,
+        absolute_threshold_uN=0.5,
+        consecutive=1,
+    )
+    onset = analyzed.experiments[0].onset
+
+    assert onset is not None
+    assert onset.mode == "absolute"
+    assert onset.onset_index == 5
+    assert onset.baseline_start_index == 2
+    assert onset.baseline_end_index == 4
+    assert onset.absolute_threshold_uN == pytest.approx(0.5)
+
+
 def test_detect_onset_attaches_unsuccessful_results(base_study) -> None:
     flat_test = SignalTable(
         columns={
@@ -632,6 +664,10 @@ def test_save_and_load_session_restores_results(
     saved = (
         base_study.disable_experiments(EXPERIMENT_A, reason="manual")
         .detect_onset(
+            mode="absolute",
+            baseline_start_index=0,
+            baseline_end_index=10,
+            absolute_threshold_uN=1.0,
             include_disabled=True,
             smoothing={"window_length": 5, "polyorder": 1},
         )
@@ -654,6 +690,13 @@ def test_save_and_load_session_restores_results(
         "window_length": 5,
         "polyorder": 1,
     }
+    assert by_stem[EXPERIMENT_A].onset.mode == "absolute"
+    assert by_stem[EXPERIMENT_A].onset.baseline_start_index == 0
+    assert by_stem[EXPERIMENT_A].onset.baseline_end_index == 10
+    assert by_stem[EXPERIMENT_A].onset.absolute_threshold_uN == pytest.approx(
+        1.0
+    )
+    assert by_stem[EXPERIMENT_A].onset.baseline_offset_uN is not None
     assert by_stem[EXPERIMENT_B].force_peaks is not None
     assert by_stem[EXPERIMENT_B].oliver_pharr is not None
 

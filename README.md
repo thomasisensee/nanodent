@@ -114,8 +114,8 @@ The public API also exposes:
 - `save_experiment_plots(...) -> list[Path]`
 
 
-## Demo notebooks using methods provided by py4dgeo
-[![Example 1](doc/notebook_demo_thumbnail.png)](https://nbviewer.org/github.com/thomasisensee/nanodent/blob/main/notebooks/demo.ipynb)
+## Demo notebook using methods provided by py4dgeo
+Use the [demo notebook](https://github.com/thomasisensee/nanodent/blob/main/notebooks/demo.ipynb) to test the functionality of `nanodent` and see how it can be used to analyze and visualize nanoindentation experiments.
 
 ## Acknowledgments
 

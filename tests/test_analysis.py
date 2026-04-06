@@ -73,10 +73,14 @@ def test_detect_onset_finds_first_sustained_crossing() -> None:
 
     assert result.success is True
     assert result.reason is None
+    assert result.mode == "relative"
     assert result.onset_index == 8
     assert result.onset_time_s == pytest.approx(time[8])
     assert result.onset_disp_nm == pytest.approx(disp[8])
     assert result.baseline_points == 5
+    assert result.baseline_start_index == 0
+    assert result.baseline_end_index == 5
+    assert result.baseline_offset_uN == pytest.approx(0.0)
     assert result.used_smoothing is False
 
 
@@ -95,6 +99,68 @@ def test_detect_onset_returns_unsuccessful_result_without_crossing() -> None:
     assert result.onset_index is None
     assert result.onset_time_s is None
     assert result.onset_disp_nm is None
+
+
+def test_detect_onset_can_use_explicit_baseline_indices() -> None:
+    force = np.array(
+        [5.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.6, 1.0],
+        dtype=np.float64,
+    )
+
+    default_result = detect_onset(
+        force,
+        baseline_points=2,
+        k=0.5,
+        consecutive=1,
+    )
+    indexed_result = detect_onset(
+        force,
+        mode="relative",
+        baseline_start_index=2,
+        baseline_end_index=6,
+        k=0.5,
+        consecutive=1,
+    )
+
+    assert default_result.success is False
+    assert indexed_result.success is True
+    assert indexed_result.onset_index == 6
+    assert indexed_result.baseline_points == 4
+    assert indexed_result.baseline_start_index == 2
+    assert indexed_result.baseline_end_index == 6
+    assert indexed_result.baseline_mean_uN == pytest.approx(0.0)
+    assert indexed_result.baseline_offset_uN == pytest.approx(0.0)
+
+
+def test_detect_onset_can_use_absolute_threshold_mode() -> None:
+    force = np.array(
+        [5.0, 5.0, 0.0, 0.0, 0.2, 0.7, 1.2],
+        dtype=np.float64,
+    )
+    time = np.arange(len(force), dtype=np.float64)
+    disp = np.linspace(0.0, 6.0, len(force), dtype=np.float64)
+
+    result = detect_onset(
+        force,
+        time_s=time,
+        disp_nm=disp,
+        mode="absolute",
+        baseline_start_index=2,
+        baseline_end_index=4,
+        absolute_threshold_uN=0.5,
+        consecutive=1,
+    )
+
+    assert result.success is True
+    assert result.mode == "absolute"
+    assert result.onset_index == 5
+    assert result.onset_time_s == pytest.approx(time[5])
+    assert result.onset_disp_nm == pytest.approx(disp[5])
+    assert result.threshold_uN == pytest.approx(0.5)
+    assert result.absolute_threshold_uN == pytest.approx(0.5)
+    assert result.baseline_start_index == 2
+    assert result.baseline_end_index == 4
+    assert result.baseline_mean_uN == pytest.approx(0.0)
 
 
 def test_detect_onset_uses_smoothed_force_when_requested() -> None:
@@ -158,6 +224,21 @@ def test_detect_onset_validates_detection_parameters() -> None:
 
     with pytest.raises(ValueError, match="disp_nm"):
         detect_onset(force, disp_nm=np.arange(19, dtype=np.float64))
+
+    with pytest.raises(ValueError, match="mode"):
+        detect_onset(force, mode="invalid")
+
+    with pytest.raises(ValueError, match="absolute_threshold_uN"):
+        detect_onset(force, mode="absolute")
+
+    with pytest.raises(ValueError, match="provided together"):
+        detect_onset(force, baseline_start_index=0)
+
+    with pytest.raises(ValueError, match="start < end"):
+        detect_onset(force, baseline_start_index=5, baseline_end_index=5)
+
+    with pytest.raises(ValueError, match="within the force signal"):
+        detect_onset(force, baseline_start_index=0, baseline_end_index=25)
 
 
 def test_detect_force_peaks_detects_two_peaks_with_coordinates() -> None:
