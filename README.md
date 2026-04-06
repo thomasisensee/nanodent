@@ -80,12 +80,6 @@ nanodent.plot_experiments(
 ax.set_xlabel("Displacement h / nm")
 ax.set_ylabel("Force P / μN")
 
-fig_h, ax_h = plt.subplots()
-plot_hardness_over_time(ax_h, filtered_study)
-
-fig_er, ax_er = plt.subplots()
-plot_reduced_modulus_over_time(ax_er, filtered_study)
-
 saved = save_experiment_plots(
     filtered_study, "plots/", zero_onset=False
 )
@@ -117,9 +111,11 @@ The public API also exposes:
 - `Study.group_by_time_gap(...) -> list[ExperimentGroup]`
 - `plot_group_timeline(...) -> tuple[Figure, Axes]`
 - `plot_experiments(...) -> Axes`
-- `plot_hardness_over_time(...) -> Axes`
-- `plot_reduced_modulus_over_time(...) -> Axes`
 - `save_experiment_plots(...) -> list[Path]`
+
+
+## Demo notebooks using methods provided by py4dgeo
+[![Example 1](doc/notebook_demo_thumbnail.png)](https://nbviewer.org/github.com/thomasisensee/nanodent/blob/main/notebooks/demo.ipynb)
 
 ## Acknowledgments
 
