@@ -342,7 +342,7 @@ def test_saved_plot_decoration_adds_top_axis_and_analysis_box() -> None:
         y="force_uN",
     )
 
-    assert ax.get_title() == "synthetic"
+    assert ax.get_title() == "synthetic\n2026-03-04 13:56:27"
     assert len(ax.texts) == 1
     assert ax.texts[0].get_text() == (
         "S=5.00 uN/nm\n"
@@ -454,7 +454,7 @@ def test_saved_plot_decoration_skips_top_axis_for_other_axes() -> None:
         y="force_uN",
     )
 
-    assert ax.get_title() == "synthetic"
+    assert ax.get_title() == "synthetic\n2026-03-04 13:56:27"
     assert len(ax.texts) == 1
     assert len(figure.axes) == 1
     plt.close(figure)
@@ -478,7 +478,7 @@ def test_saved_plot_decoration_omits_missing_analysis_values() -> None:
         y="force_uN",
     )
 
-    assert ax.get_title() == "synthetic"
+    assert ax.get_title() == "synthetic\n2026-03-04 13:56:27"
     assert len(ax.texts) == 1
     assert ax.texts[0].get_text() == "S=5.00 uN/nm"
     assert len(figure.axes) == 3

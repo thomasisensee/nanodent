@@ -450,7 +450,8 @@ def _uses_force_displacement_axes(*, section: str, x: str, y: str) -> bool:
 def _format_saved_experiment_title(experiment: Experiment) -> str:
     """Return the saved-plot title."""
 
-    return experiment.stem
+    timestamp = experiment.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+    return f"{experiment.stem}\n{timestamp}"
 
 
 def _add_saved_plot_analysis_box(ax: Axes, *, experiment: Experiment) -> None:
