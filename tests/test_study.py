@@ -177,21 +177,6 @@ def test_group_by_datetime_ranges_rejects_overlapping_ranges(
         )
 
 
-def test_describe_groups_returns_group_summaries(base_study) -> None:
-    summaries = base_study.describe_groups()
-
-    assert [summary["experiment_count"] for summary in summaries] == [2, 2]
-    assert summaries[0]["index"] == 0
-    assert summaries[0]["enabled_count"] == 2
-    assert summaries[0]["disabled_count"] == 0
-    assert summaries[0]["start"] == base_study.experiments[0].timestamp
-    assert summaries[1]["end"] == base_study.experiments[-1].timestamp
-    assert summaries[0]["stems"] == (
-        f"{EXPERIMENT_A} (enabled)",
-        f"{EXPERIMENT_B} (enabled)",
-    )
-
-
 def test_classify_quality_keeps_stable_enabled_state_shape(base_study) -> None:
     classified = base_study.classify_quality()
     by_stem = {

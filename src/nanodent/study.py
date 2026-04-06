@@ -213,22 +213,6 @@ class Study:
             )
         return grouped
 
-    def describe_groups(
-        self,
-        max_gap: timedelta = timedelta(minutes=30),
-        *,
-        include_disabled: bool = True,
-    ) -> list[dict[str, Any]]:
-        """Summarize time-gap groups for interactive inspection."""
-
-        return [
-            group.summary(self, include_disabled=include_disabled)
-            for group in self.group_by_time_gap(
-                max_gap=max_gap,
-                include_disabled=include_disabled,
-            )
-        ]
-
     def classify_quality(
         self,
         *,

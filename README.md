@@ -33,7 +33,7 @@ python -m pytest
 ## Quick Start
 
 `nanodent` loads `.hld` as the canonical source in v1, while keeping sibling
-`.tdm` and `.tdx` file paths attached to each experiment for future extension.
+`.tdm` and `.tdx` file paths attached to each experiment if available.
 
 ```python
 from datetime import datetime, timedelta
@@ -50,7 +50,6 @@ from nanodent import (
 study = load_folder("path/to/experiment-folder")
 filtered_study = study.classify_quality()
 filtered_study = filtered_study.analyze_oliver_pharr()
-summaries = filtered_study.describe_groups()
 hardness_rows = filtered_study.scalar_series("hardness")
 manual_groups = filtered_study.group_by_datetime_ranges(
     [
@@ -116,7 +115,6 @@ The public API also exposes:
 - `Study.load_session(path) -> Study`
 - `Study.group_by_datetime_ranges(...) -> list[ExperimentGroup]`
 - `Study.group_by_time_gap(...) -> list[ExperimentGroup]`
-- `Study.describe_groups(...) -> list[dict[str, Any]]`
 - `plot_group_timeline(...) -> tuple[Figure, Axes]`
 - `plot_experiments(...) -> Axes`
 - `plot_hardness_over_time(...) -> Axes`
