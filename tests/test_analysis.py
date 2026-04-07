@@ -627,7 +627,11 @@ def test_analyze_oliver_pharr_fits_full_power_law_with_fitted_hf() -> None:
     assert result.power_law_k == pytest.approx(expected_k, rel=5e-2)
     assert result.power_law_m == pytest.approx(1.5, rel=5e-2)
     assert result.power_law_hf_nm == pytest.approx(20.0, abs=1.0)
-    assert result.evaluation_disp_nm == pytest.approx(80.0)
+    expected_eval_disp = result.power_law_hf_nm + np.power(
+        result.evaluation_force_uN / result.power_law_k,
+        1.0 / result.power_law_m,
+    )
+    assert result.evaluation_disp_nm == pytest.approx(expected_eval_disp)
     expected_stiffness = expected_k * 1.5 * np.power(60.0, 0.5)
     assert result.stiffness_uN_per_nm == pytest.approx(
         expected_stiffness, rel=5e-2
@@ -658,11 +662,9 @@ def test_analyze_oliver_pharr_fits_full_power_law_with_fixed_end_disp() -> (
     assert result.power_law_m == pytest.approx(1.5, rel=5e-2)
 
 
-def test_analyze_op_power_law_uses_unloading_start_as_evaluation_point() -> (
-    None
-):
+def test_analyze_op_power_law_uses_inverse_fit_point_for_evaluation() -> None:
     x, y, _ = _make_power_law_unloading_curve(unloading_end_nm=40.0)
-    y[70] += 10.0
+    y[100] += 15.0
     unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     result = analyze_oliver_pharr(
@@ -676,7 +678,12 @@ def test_analyze_op_power_law_uses_unloading_start_as_evaluation_point() -> (
 
     assert result.success is True
     assert result.evaluation_index == 100
-    assert result.evaluation_disp_nm == pytest.approx(x[100])
+    expected_eval_disp = result.power_law_hf_nm + np.power(
+        result.evaluation_force_uN / result.power_law_k,
+        1.0 / result.power_law_m,
+    )
+    assert result.evaluation_disp_nm == pytest.approx(expected_eval_disp)
+    assert result.evaluation_disp_nm != pytest.approx(x[100])
 
 
 def test_analyze_oliver_pharr_keeps_trace_indices() -> None:
@@ -714,7 +721,11 @@ def test_analyze_oliver_pharr_power_law_stores_corrected_coordinates() -> None:
 
     assert result.success is True
     assert result.disp_correction_nm == pytest.approx(20.0)
-    assert result.evaluation_disp_nm == pytest.approx(80.0)
+    expected_eval_disp = result.power_law_hf_nm + np.power(
+        result.evaluation_force_uN / result.power_law_k,
+        1.0 / result.power_law_m,
+    )
+    assert result.evaluation_disp_nm == pytest.approx(expected_eval_disp)
     assert result.power_law_hf_nm == pytest.approx(20.0)
     assert result.x_fit[0] == pytest.approx(20.0)
     assert result.x_fit[-1] == pytest.approx(80.0)

@@ -570,12 +570,35 @@ def _fit_power_law_full(
             force_correction_uN=force_correction_uN,
         )
 
-    stiffness = _power_law_stiffness(
-        evaluation_disp_nm=evaluation_disp_nm,
-        k=fitted_k,
-        m=fitted_m,
-        hf_nm=fitted_hf,
-    )
+    try:
+        fitted_evaluation_disp = _power_law_evaluation_disp(
+            evaluation_force_uN=evaluation_force_uN,
+            k=fitted_k,
+            m=fitted_m,
+            hf_nm=fitted_hf,
+        )
+        stiffness = _power_law_stiffness(
+            evaluation_disp_nm=fitted_evaluation_disp,
+            k=fitted_k,
+            m=fitted_m,
+            hf_nm=fitted_hf,
+        )
+    except ValueError as exc:
+        return _failed_result(
+            stem=stem,
+            reason=str(exc),
+            fit_model=_POWER_LAW_FIT_MODEL,
+            evaluation_index=absolute_evaluation_index,
+            evaluation_force_uN=evaluation_force_uN,
+            evaluation_disp_nm=evaluation_disp_nm,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
+            fit_point_count=len(fit_disp),
+            used_smoothing=used_smoothing,
+            smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
+        )
     if not np.isfinite(stiffness):
         return _failed_result(
             stem=stem,
@@ -627,7 +650,7 @@ def _fit_power_law_full(
         fit_model=_POWER_LAW_FIT_MODEL,
         evaluation_index=absolute_evaluation_index,
         evaluation_force_uN=evaluation_force_uN,
-        evaluation_disp_nm=evaluation_disp_nm,
+        evaluation_disp_nm=fitted_evaluation_disp,
         unloading_start_index=absolute_evaluation_index,
         unloading_end_index=absolute_unloading_end_index,
         fit_point_count=len(fit_disp),
@@ -953,6 +976,24 @@ def _power_law_stiffness(
     if delta <= 0.0:
         raise ValueError("invalid_power_law_domain")
     return float(k * m * np.power(delta, m - 1.0))
+
+
+def _power_law_evaluation_disp(
+    *,
+    evaluation_force_uN: float,
+    k: float,
+    m: float,
+    hf_nm: float,
+) -> float:
+    """Return the fitted displacement where the model reaches one load."""
+
+    if not np.isfinite([evaluation_force_uN, k, m, hf_nm]).all():
+        raise ValueError("fit_failed")
+    if evaluation_force_uN < 0.0:
+        raise ValueError("invalid_power_law_domain")
+    if k <= 0.0 or m <= 0.0:
+        raise ValueError("fit_failed")
+    return float(hf_nm + np.power(evaluation_force_uN / k, 1.0 / m))
 
 
 def _estimate_slope(

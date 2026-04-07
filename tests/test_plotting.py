@@ -160,6 +160,31 @@ def test_plot_experiments_can_draw_evaluation_marker_when_requested() -> None:
     plt.close(figure)
 
 
+def test_plot_experiments_power_law_marker_uses_inverse_fit_point() -> None:
+    experiment = _make_experiment_with_fit(
+        fit_model="power_law_full",
+        power_law_hf_mode="fixed_end_disp",
+    )
+    figure, ax = plt.subplots()
+
+    plot_experiments(
+        ax,
+        experiment,
+        show_oliver_pharr_evaluation=True,
+    )
+
+    marker_line = ax.lines[2]
+    expected_x = float(experiment.oliver_pharr.evaluation_disp_nm) + float(
+        experiment.oliver_pharr.disp_correction_nm or 0.0
+    )
+    expected_y = float(experiment.oliver_pharr.evaluation_force_uN) + float(
+        experiment.oliver_pharr.force_correction_uN or 0.0
+    )
+    assert marker_line.get_xdata()[0] == pytest.approx(expected_x)
+    assert marker_line.get_ydata()[0] == pytest.approx(expected_y)
+    plt.close(figure)
+
+
 def test_plot_experiments_omits_linear_extension_for_power_law_fit() -> None:
     experiment = _make_experiment_with_fit(
         fit_model="power_law_full",
