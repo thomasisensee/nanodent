@@ -213,6 +213,46 @@ class Experiment:
             "test_points": len(self.trace),
         }
 
+    def unloading_curve(
+        self,
+        *,
+        x: str = "disp_nm",
+        y: str = "force_uN",
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Return the unloading branch as aligned NumPy arrays.
+
+        Args:
+            x: Trace column used for the x-values.
+            y: Trace column used for the y-values.
+
+        Returns:
+            Pair of NumPy arrays sliced from the detected unloading start
+            through the end of the test trace.
+
+        Raises:
+            ValueError: If no successful unloading result is attached or the
+                stored unloading start index is invalid.
+            KeyError: If either requested column is absent from the test trace.
+        """
+
+        unloading = self.unloading
+        if unloading is None or not unloading.success:
+            raise ValueError(
+                "Experiment has no successful unloading result attached."
+            )
+        if unloading.start_index is None:
+            raise ValueError("Unloading result has no start index.")
+
+        start_index = int(unloading.start_index)
+        if start_index < 0 or start_index >= len(self.trace):
+            raise ValueError(
+                "Unloading start index must lie within the test trace."
+            )
+
+        x_values = np.asarray(self.trace[x], dtype=np.float64)[start_index:]
+        y_values = np.asarray(self.trace[y], dtype=np.float64)[start_index:]
+        return x_values, y_values
+
     def with_enabled(
         self, enabled: bool, *, reason: str | None = None
     ) -> "Experiment":

@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from nanodent import load_experiment, load_folder
+from nanodent.analysis.unloading import detect_unloading
 from nanodent.io import _normalize_column_name
 from nanodent.models import Experiment
 
@@ -180,6 +181,51 @@ def test_from_tabular_data_accepts_mapping_like_tables() -> None:
     assert experiment.trace["time_s"][1] == pytest.approx(0.5)
     assert experiment.trace["disp_nm"][1] == pytest.approx(1500.0)
     assert experiment.trace["force_uN"][1] == pytest.approx(4.0)
+
+
+def test_experiment_unloading_curve_returns_trace_slice() -> None:
+    experiment = Experiment.from_measurements(
+        stem="synthetic",
+        timestamp=datetime(2026, 3, 4, 13, 56, 27),
+        time=np.arange(6, dtype=np.float64),
+        displacement=np.array(
+            [0.0, 1.0, 2.0, 3.0, 2.5, 2.0], dtype=np.float64
+        ),
+        force=np.array([0.0, 1.0, 3.0, 5.0, 4.0, 2.0], dtype=np.float64),
+    ).with_unloading(
+        detect_unloading(
+            np.array([0.0, 1.0, 3.0, 5.0, 4.0, 2.0], dtype=np.float64),
+            time_s=np.arange(6, dtype=np.float64),
+            disp_nm=np.array(
+                [0.0, 1.0, 2.0, 3.0, 2.5, 2.0],
+                dtype=np.float64,
+            ),
+        )
+    )
+
+    x_values, y_values = experiment.unloading_curve()
+
+    assert np.array_equal(
+        x_values,
+        np.array([3.0, 2.5, 2.0], dtype=np.float64),
+    )
+    assert np.array_equal(
+        y_values,
+        np.array([5.0, 4.0, 2.0], dtype=np.float64),
+    )
+
+
+def test_experiment_unloading_curve_requires_successful_unloading() -> None:
+    experiment = Experiment.from_measurements(
+        stem="synthetic",
+        timestamp=datetime(2026, 3, 4, 13, 56, 27),
+        time=np.arange(3, dtype=np.float64),
+        displacement=np.array([0.0, 1.0, 0.5], dtype=np.float64),
+        force=np.array([0.0, 1.0, 0.0], dtype=np.float64),
+    )
+
+    with pytest.raises(ValueError, match="successful unloading"):
+        experiment.unloading_curve()
 
 
 def test_load_experiment_reports_file_path_on_parse_error(
