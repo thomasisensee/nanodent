@@ -605,19 +605,22 @@ def _oliver_pharr_extension_segment(
 ) -> tuple[list[float], list[float]] | None:
     """Return the softened extension segment from intercept to fit start."""
 
-    if fit_result.depth_intercept_nm is None:
+    if fit_result.fit_model != "linear_fraction":
         return None
-    if fit_result.force_intercept_uN is None:
+    if fit_result.linear_depth_intercept_nm is None:
         return None
-    if fit_result.stiffness_uN_per_nm is None:
+    if fit_result.linear_intercept_uN is None:
+        return None
+    if fit_result.linear_slope_uN_per_nm is None:
         return None
     if len(fit_result.x_fit) == 0 or len(fit_result.y_fit) == 0:
         return None
 
-    start_x = float(fit_result.depth_intercept_nm)
+    start_x = float(fit_result.linear_depth_intercept_nm)
     start_y = float(
-        fit_result.force_intercept_uN
-        + fit_result.stiffness_uN_per_nm * fit_result.depth_intercept_nm
+        fit_result.linear_intercept_uN
+        + fit_result.linear_slope_uN_per_nm
+        * fit_result.linear_depth_intercept_nm
     )
     end_x = float(fit_result.x_fit[0])
     start_x = _shift_axis_value(start_x, onset_offset)

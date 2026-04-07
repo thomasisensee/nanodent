@@ -20,10 +20,24 @@ from nanodent.study import Study
 
 
 def _make_experiment() -> Experiment:
+    return _make_experiment_with_fit()
+
+
+def _make_experiment_with_fit(
+    *,
+    fit_model: str = "linear_fraction",
+    power_law_hf_mode: str = "fit",
+) -> Experiment:
     load_disp = np.linspace(0.0, 100.0, 101)
     load_force = 0.01 * load_disp**2
-    unload_disp = np.linspace(100.0, 80.0, 41)[1:]
-    unload_force = 5.0 * unload_disp - 400.0
+    if fit_model == "power_law_full":
+        unload_disp = np.linspace(100.0, 40.0, 61)[1:]
+        power_law_m = 1.5
+        power_law_k = 100.0 / np.power(60.0, power_law_m)
+        unload_force = power_law_k * np.power(unload_disp - 40.0, power_law_m)
+    else:
+        unload_disp = np.linspace(100.0, 80.0, 41)[1:]
+        unload_force = 5.0 * unload_disp - 400.0
     disp = np.concatenate([load_disp, unload_disp])
     force = np.concatenate([load_force, unload_force])
     time = np.arange(len(disp), dtype=np.float64)
@@ -62,8 +76,15 @@ def _make_experiment() -> Experiment:
         analyze_oliver_pharr(
             disp,
             force,
-            unloading_fraction=0.25,
             unloading_start_index=100,
+            fit_model=fit_model,
+            unloading_fraction=0.25
+            if fit_model == "linear_fraction"
+            else None,
+            unloading_end_disp_nm=float(disp[-1])
+            if fit_model == "power_law_full"
+            else None,
+            power_law_hf_mode=power_law_hf_mode,
             onset_disp_nm=experiment.onset.onset_disp_nm,
             stem="synthetic",
         )
@@ -104,6 +125,20 @@ def test_plot_experiments_draws_attached_oliver_pharr_overlay() -> None:
     assert ax.lines[1].get_label() == "synthetic fit"
     assert ax.lines[2].get_label() == "_nolegend_"
     assert ax.lines[2].get_linestyle() == ":"
+    plt.close(figure)
+
+
+def test_plot_experiments_omits_linear_extension_for_power_law_fit() -> None:
+    experiment = _make_experiment_with_fit(
+        fit_model="power_law_full",
+        power_law_hf_mode="fixed_end_disp",
+    )
+    figure, ax = plt.subplots()
+
+    plot_experiments(ax, experiment)
+
+    assert len(ax.lines) == 2
+    assert ax.lines[1].get_label() == "synthetic fit"
     plt.close(figure)
 
 

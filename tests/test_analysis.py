@@ -39,6 +39,24 @@ def _make_spiky_peak_curve() -> tuple[np.ndarray, np.ndarray]:
     return disp, force
 
 
+def _make_power_law_unloading_curve(
+    *,
+    hf_nm: float = 40.0,
+    m: float = 1.5,
+    unloading_end_nm: float = 40.0,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    load_disp = np.linspace(0.0, 100.0, 101)
+    load_force = 0.01 * load_disp**2
+    unload_disp = np.linspace(100.0, unloading_end_nm, 61)[1:]
+    k = 100.0 / np.power(100.0 - hf_nm, m)
+    unload_force = k * np.power(unload_disp - hf_nm, m)
+    return (
+        np.concatenate([load_disp, unload_disp]),
+        np.concatenate([load_force, unload_force]),
+        float(k),
+    )
+
+
 def _make_two_peak_signal() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     time = np.arange(0.0, 120.0, 1.0, dtype=np.float64)
     disp = np.linspace(0.0, 119.0, len(time), dtype=np.float64)
@@ -359,16 +377,18 @@ def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
 
     assert result.success is True
     assert result.reason is None
+    assert result.fit_model == "linear_fraction"
     assert result.used_smoothing is False
-    assert result.peak_index == 100
-    assert result.peak_force_uN == pytest.approx(100.0)
-    assert result.peak_disp_nm == pytest.approx(100.0)
+    assert result.evaluation_index == 100
+    assert result.evaluation_force_uN == pytest.approx(100.0)
+    assert result.evaluation_disp_nm == pytest.approx(100.0)
     assert result.unloading_start_index == 100
     assert result.unloading_end_index == 110
     assert result.fit_point_count == 11
     assert result.stiffness_uN_per_nm == pytest.approx(5.0, rel=1e-4)
-    assert result.force_intercept_uN == pytest.approx(-400.0, rel=1e-4)
-    assert result.depth_intercept_nm == pytest.approx(80.0, rel=1e-4)
+    assert result.linear_slope_uN_per_nm == pytest.approx(5.0, rel=1e-4)
+    assert result.linear_intercept_uN == pytest.approx(-400.0, rel=1e-4)
+    assert result.linear_depth_intercept_nm == pytest.approx(80.0, rel=1e-4)
     assert result.r_squared == pytest.approx(1.0, abs=1e-6)
     assert result.hardness_success is True
     assert result.hardness_reason is None
@@ -398,14 +418,14 @@ def test_analyze_oliver_pharr_uses_smoothed_signals_for_peak_detection() -> (
         smoothing={"window_length": 21, "polyorder": 2},
     )
 
-    assert raw_result.peak_index == 70
+    assert raw_result.evaluation_index == 70
     assert smoothed_result.success is True
     assert smoothed_result.used_smoothing is True
     assert dict(smoothed_result.smoothing or {}) == {
         "window_length": 21,
         "polyorder": 2,
     }
-    assert smoothed_result.peak_index == pytest.approx(100, abs=2)
+    assert smoothed_result.evaluation_index == pytest.approx(100, abs=2)
 
 
 def test_analyze_oliver_pharr_can_reuse_precomputed_unloading_start() -> None:
@@ -420,7 +440,7 @@ def test_analyze_oliver_pharr_can_reuse_precomputed_unloading_start() -> None:
     )
 
     assert result.success is True
-    assert result.peak_index == 70
+    assert result.evaluation_index == 70
     assert result.unloading_start_index == 70
 
 
@@ -429,6 +449,21 @@ def test_analyze_oliver_pharr_validates_explicit_unloading_start() -> None:
 
     with pytest.raises(ValueError, match="unloading_start_index"):
         analyze_oliver_pharr(x, y, unloading_start_index=len(x))
+
+
+def test_analyze_oliver_pharr_rejects_unloading_fraction_for_power_law() -> (
+    None
+):
+    x, y, _ = _make_power_law_unloading_curve()
+
+    with pytest.raises(ValueError, match="unloading_fraction"):
+        analyze_oliver_pharr(
+            x,
+            y,
+            fit_model="power_law_full",
+            unloading_fraction=0.25,
+            unloading_start_index=100,
+        )
 
 
 def test_analyze_oliver_pharr_rejects_invalid_unloading_fraction() -> None:
@@ -446,6 +481,19 @@ def test_analyze_oliver_pharr_rejects_invalid_epsilon() -> None:
 
     with pytest.raises(ValueError, match="epsilon"):
         analyze_oliver_pharr(x, y, epsilon=0.0)
+
+
+def test_analyze_oliver_pharr_rejects_invalid_power_law_hf_mode() -> None:
+    x, y, _ = _make_power_law_unloading_curve()
+
+    with pytest.raises(ValueError, match="power_law_hf_mode"):
+        analyze_oliver_pharr(
+            x,
+            y,
+            fit_model="power_law_full",
+            unloading_start_index=100,
+            power_law_hf_mode="invalid",
+        )
 
 
 def test_analyze_oliver_pharr_marks_missing_onset_for_hardness() -> None:
@@ -512,6 +560,92 @@ def test_analyze_oliver_pharr_marks_missing_unloading_branch() -> None:
 
     assert result.success is False
     assert result.reason == "no_unloading_branch"
+
+
+def test_analyze_oliver_pharr_fits_full_power_law_with_fitted_hf() -> None:
+    x, y, expected_k = _make_power_law_unloading_curve(unloading_end_nm=50.0)
+
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        fit_model="power_law_full",
+        unloading_start_index=100,
+        onset_disp_nm=20.0,
+    )
+
+    assert result.success is True
+    assert result.fit_model == "power_law_full"
+    assert result.evaluation_index == 100
+    assert result.unloading_end_index == len(x) - 1
+    assert result.fit_point_count == len(x) - 100
+    assert result.power_law_hf_mode == "fit"
+    assert result.power_law_k == pytest.approx(expected_k, rel=5e-2)
+    assert result.power_law_m == pytest.approx(1.5, rel=5e-2)
+    assert result.power_law_hf_nm == pytest.approx(40.0, abs=1.0)
+    expected_stiffness = expected_k * 1.5 * np.power(60.0, 0.5)
+    assert result.stiffness_uN_per_nm == pytest.approx(
+        expected_stiffness, rel=5e-2
+    )
+    assert result.linear_intercept_uN is None
+    assert result.linear_depth_intercept_nm is None
+
+
+def test_analyze_oliver_pharr_fits_full_power_law_with_fixed_end_disp() -> (
+    None
+):
+    x, y, expected_k = _make_power_law_unloading_curve(unloading_end_nm=40.0)
+
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        fit_model="power_law_full",
+        unloading_start_index=100,
+        unloading_end_disp_nm=40.0,
+        power_law_hf_mode="fixed_end_disp",
+    )
+
+    assert result.success is True
+    assert result.power_law_hf_mode == "fixed_end_disp"
+    assert result.power_law_hf_nm == pytest.approx(40.0)
+    assert result.power_law_k == pytest.approx(expected_k, rel=5e-2)
+    assert result.power_law_m == pytest.approx(1.5, rel=5e-2)
+
+
+def test_analyze_op_power_law_uses_unloading_start_as_evaluation_point() -> (
+    None
+):
+    x, y, _ = _make_power_law_unloading_curve(unloading_end_nm=40.0)
+    y[70] += 10.0
+
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        fit_model="power_law_full",
+        unloading_start_index=100,
+        unloading_end_disp_nm=40.0,
+        power_law_hf_mode="fixed_end_disp",
+    )
+
+    assert result.success is True
+    assert result.evaluation_index == 100
+    assert result.evaluation_disp_nm == pytest.approx(x[100])
+
+
+def test_analyze_oliver_pharr_power_law_requires_end_disp_for_fixed_hf() -> (
+    None
+):
+    x, y, _ = _make_power_law_unloading_curve(unloading_end_nm=40.0)
+
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        fit_model="power_law_full",
+        unloading_start_index=100,
+        power_law_hf_mode="fixed_end_disp",
+    )
+
+    assert result.success is False
+    assert result.reason == "missing_unloading_end_disp"
 
 
 def test_analyze_oliver_pharr_marks_too_few_unloading_points() -> None:

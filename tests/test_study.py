@@ -350,6 +350,39 @@ def test_analyze_oliver_pharr_overwrite_recomputes_selected_experiments(
     )
 
 
+def test_analyze_oliver_pharr_forwards_power_law_options(base_study) -> None:
+    load_disp = np.linspace(0.0, 100.0, 101)
+    load_force = 0.01 * load_disp**2
+    unload_disp = np.linspace(100.0, 40.0, 61)[1:]
+    unload_force = (100.0 / np.power(60.0, 1.5)) * np.power(
+        unload_disp - 40.0, 1.5
+    )
+    test_section = SignalTable(
+        columns={
+            "time_s": np.arange(161, dtype=np.float64),
+            "disp_nm": np.concatenate([load_disp, unload_disp]),
+            "force_uN": np.concatenate([load_force, unload_force]),
+        },
+        point_count=161,
+        raw_columns=("Time_s", "Disp_nm", "Force_uN"),
+    )
+    experiment = replace(base_study.experiments[0], test=test_section)
+
+    analyzed = Study(experiments=(experiment,)).analyze_oliver_pharr(
+        fit_model="power_law_full",
+        power_law_hf_mode="fixed_end_disp",
+    )
+    result = analyzed.experiments[0].oliver_pharr
+
+    assert result is not None
+    assert result.success is True
+    assert result.fit_model == "power_law_full"
+    assert result.power_law_hf_mode == "fixed_end_disp"
+    assert result.power_law_hf_nm == pytest.approx(
+        analyzed.experiments[0].unloading.end_disp_nm
+    )
+
+
 def test_detect_onset_skips_disabled_experiments_by_default(
     base_study,
 ) -> None:

@@ -270,15 +270,17 @@ class Study:
         self,
         *,
         stems: Iterable[str] | str | None = None,
-        unloading_fraction: float = 0.2,
+        fit_model: str = "linear_fraction",
+        unloading_fraction: float | None = None,
         smoothing: Mapping[str, Any] | None = None,
         fit_num_points: int = 2,
         use_force_peak: bool = True,
+        power_law_hf_mode: str = "fit",
         epsilon: float = 0.75,
         include_disabled: bool = False,
         overwrite: bool = False,
     ) -> "Study":
-        """Analyze selected experiments with a straight-line unloading fit."""
+        """Analyze selected experiments with one Oliver-Pharr fit model."""
 
         selected_stems = self._selected_stem_set(
             stems=stems,
@@ -312,6 +314,7 @@ class Study:
                     _analyze_oliver_pharr(
                         updated.trace["disp_nm"],
                         updated.trace["force_uN"],
+                        fit_model=fit_model,
                         unloading_fraction=unloading_fraction,
                         smoothing=smoothing,
                         fit_num_points=fit_num_points,
@@ -319,6 +322,10 @@ class Study:
                         unloading_start_index=None
                         if unloading is None
                         else unloading.start_index,
+                        unloading_end_disp_nm=None
+                        if unloading is None
+                        else unloading.end_disp_nm,
+                        power_law_hf_mode=power_law_hf_mode,
                         onset_disp_nm=(
                             updated.onset.onset_disp_nm
                             if updated.onset is not None
