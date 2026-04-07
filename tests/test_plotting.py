@@ -134,6 +134,32 @@ def test_plot_experiments_draws_attached_oliver_pharr_overlay() -> None:
     plt.close(figure)
 
 
+def test_plot_experiments_can_draw_evaluation_marker_when_requested() -> None:
+    experiment = _make_experiment()
+    figure, ax = plt.subplots()
+
+    plot_experiments(
+        ax,
+        experiment,
+        show_oliver_pharr_evaluation=True,
+    )
+
+    assert len(ax.lines) == 4
+    marker_line = ax.lines[2]
+    assert marker_line.get_label() == "_nolegend_"
+    assert marker_line.get_marker() == "o"
+    assert marker_line.get_markerfacecolor() == "none"
+    assert marker_line.get_xdata()[0] == pytest.approx(
+        float(experiment.oliver_pharr.evaluation_disp_nm)
+        + float(experiment.oliver_pharr.disp_correction_nm or 0.0)
+    )
+    assert marker_line.get_ydata()[0] == pytest.approx(
+        float(experiment.oliver_pharr.evaluation_force_uN)
+        + float(experiment.oliver_pharr.force_correction_uN or 0.0)
+    )
+    plt.close(figure)
+
+
 def test_plot_experiments_omits_linear_extension_for_power_law_fit() -> None:
     experiment = _make_experiment_with_fit(
         fit_model="power_law_full",
@@ -236,6 +262,30 @@ def test_plot_experiments_can_zero_displacement_at_onset() -> None:
     assert np.allclose(
         extension_x[1],
         float(experiment.oliver_pharr.x_fit[0]),
+    )
+    plt.close(figure)
+
+
+def test_plot_experiments_shifts_evaluation_marker_when_zeroing_onset() -> (
+    None
+):
+    experiment = _make_experiment()
+    figure, ax = plt.subplots()
+
+    plot_experiments(
+        ax,
+        experiment,
+        zero_onset=True,
+        show_oliver_pharr_evaluation=True,
+    )
+
+    marker_line = ax.lines[2]
+    assert marker_line.get_xdata()[0] == pytest.approx(
+        float(experiment.oliver_pharr.evaluation_disp_nm)
+    )
+    assert marker_line.get_ydata()[0] == pytest.approx(
+        float(experiment.oliver_pharr.evaluation_force_uN)
+        + float(experiment.oliver_pharr.force_correction_uN or 0.0)
     )
     plt.close(figure)
 

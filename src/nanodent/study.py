@@ -271,7 +271,7 @@ class Study:
         fit_model: str = "linear_fraction",
         unloading_fraction: float | None = None,
         smoothing: Mapping[str, Any] | None = None,
-        fit_num_points: int = 2,
+        fit_num_points: int = 200,
         power_law_hf_mode: str = "fit",
         epsilon: float = 0.75,
         include_disabled: bool = False,

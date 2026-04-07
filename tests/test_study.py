@@ -268,6 +268,19 @@ def test_analyze_oliver_pharr_attaches_hardness_after_onset_detection(
         )
 
 
+def test_analyze_oliver_pharr_uses_dense_fit_curve_by_default(
+    base_study,
+) -> None:
+    analyzed = base_study.analyze_oliver_pharr()
+
+    result = analyzed.experiments[0].oliver_pharr
+
+    assert result is not None
+    assert result.success is True
+    assert len(result.x_fit) == 200
+    assert len(result.y_fit) == 200
+
+
 def test_analyze_oliver_pharr_marks_missing_onset_when_not_detected(
     base_study,
 ) -> None:

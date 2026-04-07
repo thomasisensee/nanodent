@@ -118,6 +118,7 @@ def plot_experiments(
     zero_onset: bool = False,
     show_unloading: bool = False,
     show_oliver_pharr: bool = True,
+    show_oliver_pharr_evaluation: bool = False,
     unloading_kwargs: Mapping[str, Any] | None = None,
     fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
@@ -178,6 +179,7 @@ def plot_experiments(
             fit_result=fit_result,
             fit_kwargs=fit_kwargs,
             onset_offset=onset_offset if x == "disp_nm" else None,
+            show_evaluation_marker=show_oliver_pharr_evaluation,
         )
 
     return ax
@@ -233,6 +235,7 @@ def save_experiment_plots(
             zero_onset=zero_onset,
             show_unloading=True,
             show_oliver_pharr=show_oliver_pharr,
+            show_oliver_pharr_evaluation=True,
             unloading_kwargs=unloading_kwargs,
             fit_kwargs=fit_kwargs,
             **line_kwargs,
@@ -294,6 +297,7 @@ def _plot_oliver_pharr_overlay(
     fit_result: Any,
     fit_kwargs: Mapping[str, Any] | None,
     onset_offset: float | None,
+    show_evaluation_marker: bool,
 ) -> None:
     """Plot the fitted and softly extended Oliver-Pharr lines."""
 
@@ -317,6 +321,28 @@ def _plot_oliver_pharr_overlay(
         onset_offset=onset_offset,
     )
     ax.plot(x_fit, y_fit, **overlay_kwargs)
+    if show_evaluation_marker:
+        evaluation_point = _oliver_pharr_evaluation_point(
+            fit_result,
+            onset_offset=onset_offset,
+        )
+        if evaluation_point is not None:
+            x_value, y_value = evaluation_point
+            marker_kwargs = {
+                "color": overlay_kwargs.get("color", "black"),
+                "label": "_nolegend_",
+                "linestyle": "",
+                "marker": "o",
+                "markeredgecolor": overlay_kwargs.get("color", "black"),
+                "markeredgewidth": 1.5,
+                "markerfacecolor": "none",
+                "markersize": 7.0,
+                "zorder": max(
+                    float(overlay_kwargs.get("zorder", 4)) + 0.1,
+                    0.0,
+                ),
+            }
+            ax.plot([x_value], [y_value], **marker_kwargs)
 
     extension_segment = _oliver_pharr_extension_segment(
         fit_result, onset_offset=onset_offset
@@ -362,7 +388,7 @@ def _plot_unloading_overlay(
         return
 
     overlay_kwargs = {
-        "color": curve_kwargs.get("color", "black"),
+        "color": curve_kwargs.get("color", "lightgray"),
         "alpha": 0.75,
         "linewidth": max(
             float(curve_kwargs.get("linewidth", 1.5)) * 1.15,
@@ -647,6 +673,26 @@ def _oliver_pharr_plot_curve(
     if onset_offset is not None:
         x_fit = x_fit - onset_offset
     return x_fit, y_fit
+
+
+def _oliver_pharr_evaluation_point(
+    fit_result: Any,
+    *,
+    onset_offset: float | None,
+) -> tuple[float, float] | None:
+    """Return evaluation-point coordinates mapped onto raw plotting axes."""
+
+    if fit_result.evaluation_disp_nm is None:
+        return None
+    if fit_result.evaluation_force_uN is None:
+        return None
+
+    x_value = float(fit_result.evaluation_disp_nm)
+    y_value = float(fit_result.evaluation_force_uN)
+    x_value += _fit_result_disp_correction(fit_result)
+    y_value += _fit_result_force_correction(fit_result)
+    x_value = _shift_axis_value(x_value, onset_offset)
+    return x_value, y_value
 
 
 def _fit_result_disp_correction(fit_result: Any) -> float:
