@@ -9,10 +9,10 @@ build-backend = "hatchling.build"
 name = "nanodent"
 description = "Analysis package for nanoindentation experimental data."
 readme = "README.md"
-maintainers = [
+authors = [
     { name = "Thomas Isensee", email = "thomas.isensee@iwr.uni-heidelberg.de" },
 ]
-version = "0.0.1"
+version = "0.0.2"
 requires-python = ">=3.10"
 license-files = ["LICEN[CS]E*"]
 license = "MIT"
@@ -30,8 +30,6 @@ dependencies = [
 [project.optional-dependencies]
 docs = [
     "ipykernel",
-    "nbsphinx",
-    "nbsphinx-link",
     "sphinx",
     "sphinx_mdinclude",
     "sphinx_rtd_theme",

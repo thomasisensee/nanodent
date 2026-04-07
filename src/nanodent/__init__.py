@@ -5,11 +5,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nanodent.analysis.filters import savgol
+from nanodent.analysis.force_peaks import (
+    ForcePeakDetectionResult,
+    ForcePeakPosition,
+    detect_force_peaks,
+)
 from nanodent.analysis.oliver_pharr import (
-    OliverPharrBatchResult,
     OliverPharrExperimentResult,
     analyze_oliver_pharr,
 )
+from nanodent.analysis.onset import OnsetDetectionResult, detect_onset
 from nanodent.analysis.quality import (
     QualityCheckResult,
     classify_flat_force,
@@ -18,6 +23,10 @@ from nanodent.analysis.quality import (
     classify_outlier_jumps,
     classify_peak_balance,
     classify_quality,
+)
+from nanodent.analysis.unloading import (
+    UnloadingDetectionResult,
+    detect_unloading,
 )
 from nanodent.io import load_experiment, load_folder
 from nanodent.models import (
@@ -42,14 +51,20 @@ __all__ = [
     "Experiment",
     "ExperimentGroup",
     "ExperimentPaths",
-    "OliverPharrBatchResult",
+    "ForcePeakDetectionResult",
+    "ForcePeakPosition",
+    "OnsetDetectionResult",
     "OliverPharrExperimentResult",
     "QualityCheckResult",
+    "UnloadingDetectionResult",
     "MetadataEntry",
     "SegmentDefinition",
     "SignalTable",
     "Study",
     "__version__",
+    "detect_force_peaks",
+    "detect_onset",
+    "detect_unloading",
     "analyze_oliver_pharr",
     "classify_gradual_onset",
     "classify_high_displacement",

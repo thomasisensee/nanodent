@@ -1,4 +1,4 @@
-name: Release
+name: Publish on PyPI and TestPyPI
 
 on:
   workflow_dispatch:
@@ -53,25 +53,12 @@ jobs:
           print(f"Publishing from {ref}, matching project version {version}.")
           PY
 
-      - name: Install build and test dependencies
-        run: |
-          python -m pip install --upgrade pip build twine pytest
+      - name: Install uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57
 
       - name: Build source and wheel distributions
         run: |
-          python -m build
-
-      - name: Check built distributions
-        run: |
-          python -m twine check dist/*
-
-      - name: Install package from built wheel
-        run: |
-          python -m pip install --force-reinstall dist/*.whl
-
-      - name: Run Python tests
-        run: |
-          python -m pytest
+          uv build
 
       - name: Upload built distributions
         uses: actions/upload-artifact@v7
@@ -86,22 +73,35 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       id-token: write
     environment:
       name: testpypi
-      url: https://test.pypi.org/project/nanodent/
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Download built distributions
         uses: actions/download-artifact@v8
         with:
           name: python-package-distributions
           path: dist/
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57
+
+      - name: Show downloaded files
+        run: |
+          pwd
+          ls -lah
+          ls -lah dist
+
       - name: Publish distributions to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
+        run: |
+          uv publish --index testpypi \
+          --config-file uv.toml \
+          dist/*
 
   publish-pypi:
     name: Publish to PyPI
@@ -109,20 +109,35 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       id-token: write
     environment:
       name: pypi
-      url: https://pypi.org/project/nanodent/
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Download built distributions
         uses: actions/download-artifact@v8
         with:
           name: python-package-distributions
           path: dist/
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57
+
+      - name: Show downloaded files
+        run: |
+          pwd
+          ls -lah
+          ls -lah dist
+
       - name: Publish distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        run: |
+          uv publish --index pypi \
+            --config-file uv.toml \
+            dist/*
 
   github-release:
     name: Create GitHub Release

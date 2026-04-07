@@ -1,9 +1,9 @@
 # nanodent
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/thomasisensee/nanodent/ci.yml?branch=main)](https://github.com/thomasisensee/nanodent/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/github/thomasisensee/nanodent/graph/badge.svg?token=DRJB38CIZI)](https://codecov.io/github/thomasisensee/nanodent)
-![Python](https://img.shields.io/badge/python-3.12%20|%203.13%20|%203.14-blue)
+![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12%20|%203.13%20|%203.14-blue)
 
 ## Installation
 
@@ -33,39 +33,62 @@ python -m pytest
 ## Quick Start
 
 `nanodent` loads `.hld` as the canonical source in v1, while keeping sibling
-`.tdm` and `.tdx` file paths attached to each experiment for future extension.
+`.tdm` and `.tdx` file paths attached to each experiment if available.
 
 ```python
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from nanodent import (
     load_folder,
+    plot_hardness_over_time,
     plot_group_timeline,
     plot_groups,
+    plot_reduced_modulus_over_time,
     save_experiment_plots,
 )
 
 study = load_folder("path/to/experiment-folder")
 filtered_study = study.classify_quality()
-summaries = filtered_study.describe_groups()
+filtered_study = filtered_study.analyze_oliver_pharr()
+hardness_rows = filtered_study.scalar_series("hardness")
+pop_in_rows = filtered_study.detect_force_peaks().scalar_series("pop_in_load")
+manual_groups = filtered_study.group_by_datetime_ranges(
+    [
+        (
+            datetime(2026, 3, 4, 13, 0, 0),
+            datetime(2026, 3, 4, 15, 0, 0),
+        ),
+    ]
+)
 
 timeline_fig, timeline_ax = plot_group_timeline(
     filtered_study,
     max_gap=timedelta(minutes=30),
 )
 
-groups = filtered_study.group_by_time_gap()
-fig, axes = plot_groups(
-    groups,
+fig, ax = plt.subplots()
+nanodent.plot_experiments(
+    ax,
+    filtered_study,
+    oliver_pharr=op_result,
+    fit_kwargs={"color": "gray", "linestyle": "solid", "linewidth": "2"},
     x="disp_nm",
     y="force_uN",
-    cmap="viridis",
-    alignment={"method": "force_threshold", "force_threshold": 10.0},
-    show_slope=True,
-    xlim=(0.0, 1500.0),
+    zero_onset=False,
+    cmap="rainbow",
 )
 
-saved = save_experiment_plots(filtered_study, "plots/")
+ax.set_xlabel("Displacement h / nm")
+ax.set_ylabel("Force P / μN")
+
+saved = save_experiment_plots(
+    filtered_study, "plots/", zero_onset=False
+)
+
+filtered_study.save_session("analysis-session.pkl")
+resumed_study = load_folder("path/to/experiment-folder").load_session(
+    "analysis-session.pkl"
+)
 ```
 
 `Study.classify_quality()` keeps all experiments loaded but marks
@@ -81,15 +104,19 @@ The public API also exposes:
 
 - `load_experiment(path) -> Experiment`
 - `load_folder(path) -> Study`
+- `Study.analyze_oliver_pharr(...) -> Study`
+- `Study.scalar_series(...) -> list[dict[str, Any]]`
+- `Study.save_session(path) -> Path`
+- `Study.load_session(path) -> Study`
+- `Study.group_by_datetime_ranges(...) -> list[ExperimentGroup]`
 - `Study.group_by_time_gap(...) -> list[ExperimentGroup]`
-- `Study.describe_groups(...) -> list[dict[str, Any]]`
 - `plot_group_timeline(...) -> tuple[Figure, Axes]`
-- `plot_groups(...) -> tuple[Figure, Axes | ndarray]`
+- `plot_experiments(...) -> Axes`
 - `save_experiment_plots(...) -> list[Path]`
 
-Signal processing stays NumPy-first and separate from the data objects:
-`nanodent.savgol`, `nanodent.gradient`, `nanodent.align_curve`, and
-`nanodent.curve_fit_model`.
+
+## Demo notebook using methods provided by py4dgeo
+Use the [demo notebook](https://github.com/thomasisensee/nanodent/blob/main/notebooks/demo.ipynb) to test the functionality of `nanodent` and see how it can be used to analyze and visualize nanoindentation experiments.
 
 ## Acknowledgments
 

@@ -13,6 +13,10 @@ from nanodent.models import (
     MetadataEntry,
     SegmentDefinition,
     SignalTable,
+    _displacement_scale_factor,
+    _force_scale_factor,
+    _normalize_unit,
+    _time_scale_factor,
 )
 from nanodent.study import Study
 
@@ -162,7 +166,10 @@ def _parse_hld_file(experiment_paths: ExperimentPaths) -> Experiment:
     metadata = _metadata_mapping(metadata_entries)
     timestamp = datetime.strptime(metadata["Time Stamp"], _TIMESTAMP_FORMAT)
     return Experiment(
+        stem=experiment_paths.stem,
         paths=experiment_paths,
+        source_path=experiment_paths.hld_path,
+        source_format="hld",
         metadata=metadata,
         metadata_entries=tuple(metadata_entries),
         timestamp=timestamp,
@@ -269,9 +276,8 @@ def _make_signal_table(
         Signal table with normalized column names and float64 arrays.
     """
 
-    normalized_columns = [
-        _normalize_column_name(column) for column in raw_columns
-    ]
+    column_specs = [_column_spec(column) for column in raw_columns]
+    normalized_columns = [normalized for normalized, _ in column_specs]
     matrix = np.asarray(list(rows), dtype=np.float64)
     if matrix.size == 0:
         matrix = np.empty((0, len(normalized_columns)), dtype=np.float64)
@@ -286,8 +292,8 @@ def _make_signal_table(
             f"but contained {matrix.shape[1]}."
         )
     columns = {
-        normalized: matrix[:, index].astype(np.float64, copy=False)
-        for index, normalized in enumerate(normalized_columns)
+        normalized: matrix[:, index].astype(np.float64, copy=False) * scale
+        for index, (normalized, scale) in enumerate(column_specs)
     }
     return SignalTable(
         columns=columns, point_count=matrix.shape[0], raw_columns=raw_columns
@@ -411,6 +417,41 @@ def _normalize_column_name(column_name: str) -> str:
         Snake-case column name with normalized unit suffixes.
     """
 
+    return _column_spec(column_name)[0]
+
+
+def _column_spec(column_name: str) -> tuple[str, float]:
+    """Return the normalized canonical name and scale factor for a column."""
+
+    tokens = _column_tokens(column_name)
+    unit_token, base_tokens = _split_column_unit(tokens)
+    normalized_tokens = [token.lower() for token in base_tokens]
+    if unit_token is None:
+        return "_".join(normalized_tokens), 1.0
+
+    normalized_unit = _normalize_unit(unit_token)
+    if normalized_unit in {"s", "ms"}:
+        canonical_unit = "s"
+        scale = _time_scale_factor(normalized_unit)
+    elif normalized_unit in {"nm", "um", "mm"}:
+        canonical_unit = "nm"
+        scale = _displacement_scale_factor(normalized_unit)
+    elif normalized_unit in {"un", "mn", "n"}:
+        canonical_unit = "uN"
+        scale = _force_scale_factor(normalized_unit)
+    else:
+        canonical_unit = {
+            "v": "V",
+            "hz": "Hz",
+            "deg": "deg",
+        }.get(normalized_unit, normalized_unit)
+        scale = 1.0
+    return "_".join([*normalized_tokens, canonical_unit]), scale
+
+
+def _column_tokens(column_name: str) -> list[str]:
+    """Return sanitized column-name tokens preserving unit information."""
+
     text = column_name.strip()
     text = text.replace("µ", "u").replace("μ", "u").replace("�", "u")
     text = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", text)
@@ -419,30 +460,19 @@ def _normalize_column_name(column_name: str) -> str:
     tokens = [token for token in text.split("_") if token]
     if not tokens:
         raise ValueError(f"Could not normalize column name {column_name!r}")
-    if (
-        len(tokens) >= 2
-        and tokens[-2].lower() == "u"
-        and tokens[-1].lower() == "n"
-    ):
-        tokens = [*tokens[:-2], "uN"]
-    normalized_tokens: list[str] = []
-    for index, token in enumerate(tokens):
-        lower_token = token.lower()
-        if index == len(tokens) - 1:
-            normalized_tokens.append(
-                {
-                    "s": "s",
-                    "mm": "mm",
-                    "nm": "nm",
-                    "un": "uN",
-                    "v": "V",
-                    "hz": "Hz",
-                    "deg": "deg",
-                }.get(lower_token, lower_token)
-            )
-        else:
-            normalized_tokens.append(lower_token)
-    return "_".join(normalized_tokens)
+    return tokens
+
+
+def _split_column_unit(tokens: list[str]) -> tuple[str | None, list[str]]:
+    """Split column tokens into a base name and trailing unit token."""
+
+    if len(tokens) >= 2 and tokens[-1].lower() == "n":
+        prefix = tokens[-2].lower()
+        if prefix in {"u", "m"}:
+            return f"{prefix}N", tokens[:-2]
+    if len(tokens) == 1:
+        return None, tokens
+    return tokens[-1], tokens[:-1]
 
 
 def _require_section(
