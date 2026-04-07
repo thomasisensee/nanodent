@@ -820,11 +820,59 @@ def test_scalar_series_returns_timestamped_rows(base_study) -> None:
     assert rows == expected
 
 
+def test_scalar_series_returns_pop_in_load_rows(base_study) -> None:
+    analyzed = base_study.detect_force_peaks()
+    expected = [
+        {
+            "timestamp": experiment.timestamp,
+            "stem": experiment.stem,
+            "value": min(
+                float(peak.force_uN) for peak in experiment.force_peaks.peaks
+            ),
+        }
+        for experiment in analyzed.experiments
+        if experiment.force_peaks is not None
+        and experiment.force_peaks.success
+        and len(experiment.force_peaks.peaks) >= 2
+    ]
+
+    rows = analyzed.scalar_series("pop_in_load")
+
+    assert rows == expected
+
+
 def test_scalar_series_can_keep_missing_values(base_study) -> None:
     rows = base_study.scalar_series("hardness", drop_missing=False)
 
     assert len(rows) == len(base_study.experiments)
     assert all(row["value"] is None for row in rows)
+
+
+def test_scalar_series_pop_in_load_can_keep_missing_values(
+    base_study,
+) -> None:
+    analyzed = base_study.detect_force_peaks()
+    first, *rest = analyzed.experiments
+    one_peak_result = replace(
+        first.force_peaks,
+        peaks=first.force_peaks.peaks[:1],
+        peak_count=1,
+    )
+    partial = Study(
+        experiments=(replace(first, force_peaks=one_peak_result), *rest)
+    )
+
+    rows = partial.scalar_series("pop_in_load", drop_missing=False)
+
+    assert rows[0] == {
+        "timestamp": first.timestamp,
+        "stem": first.stem,
+        "value": None,
+    }
+    assert [row["stem"] for row in rows[1:]] == [
+        experiment.stem for experiment in rest
+    ]
+    assert all(row["value"] is not None for row in rows[1:])
 
 
 def test_scalar_series_respects_enabled_filter(base_study) -> None:
@@ -896,6 +944,54 @@ def test_group_scalar_series_returns_grouped_rows(base_study) -> None:
     assert rows == expected_rows
 
 
+def test_group_scalar_series_returns_grouped_pop_in_load_rows(
+    base_study,
+) -> None:
+    analyzed = base_study.detect_force_peaks()
+    groups = analyzed.group_by_time_gap()
+    expected_rows = []
+    for group in groups:
+        resolved = analyzed.resolve_group(group)
+        values = np.asarray(
+            [
+                min(
+                    float(peak.force_uN)
+                    for peak in experiment.force_peaks.peaks
+                )
+                for experiment in resolved
+                if experiment.force_peaks is not None
+                and experiment.force_peaks.success
+                and len(experiment.force_peaks.peaks) >= 2
+            ],
+            dtype=np.float64,
+        )
+        if len(values) == 0:
+            continue
+        valid_experiments = [
+            experiment
+            for experiment in resolved
+            if experiment.force_peaks is not None
+            and experiment.force_peaks.success
+            and len(experiment.force_peaks.peaks) >= 2
+        ]
+        expected_rows.append(
+            {
+                "timestamp": _mean_timestamp(
+                    *[experiment.timestamp for experiment in valid_experiments]
+                ),
+                "group_index": group.index,
+                "stems": tuple(experiment.stem for experiment in resolved),
+                "value": float(np.mean(values)),
+                "std": float(np.std(values, ddof=0)),
+                "count": len(values),
+            }
+        )
+
+    rows = analyzed.group_scalar_series("pop_in_load")
+
+    assert rows == expected_rows
+
+
 def test_group_scalar_series_can_use_explicit_groups(base_study) -> None:
     analyzed = base_study.detect_onset()
     group = analyzed.group_by_time_gap()[0]
@@ -947,6 +1043,42 @@ def test_group_scalar_series_uses_available_values_within_group(
     assert rows[0]["std"] == pytest.approx(0.0)
 
 
+def test_group_scalar_series_pop_in_load_uses_available_values_within_group(
+    base_study,
+) -> None:
+    analyzed = base_study.detect_force_peaks()
+    first, second, third, fourth = analyzed.experiments
+    one_peak_result = replace(
+        third.force_peaks,
+        peaks=third.force_peaks.peaks[:1],
+        peak_count=1,
+    )
+    partial = Study(
+        experiments=(
+            first,
+            second,
+            replace(third, force_peaks=one_peak_result),
+            fourth,
+        )
+    )
+    group = partial.group_by_time_gap()[1]
+
+    rows = partial.group_scalar_series("pop_in_load", groups=[group])
+
+    assert rows == [
+        {
+            "timestamp": fourth.timestamp,
+            "group_index": group.index,
+            "stems": group.stems,
+            "value": pytest.approx(
+                min(float(peak.force_uN) for peak in fourth.force_peaks.peaks)
+            ),
+            "std": pytest.approx(0.0),
+            "count": 1,
+        }
+    ]
+
+
 def test_group_scalar_series_can_keep_empty_groups(base_study) -> None:
     groups = base_study.group_by_time_gap()
 
@@ -957,6 +1089,41 @@ def test_group_scalar_series_can_keep_empty_groups(base_study) -> None:
         "timestamp": _mean_timestamp(
             base_study.experiments[0].timestamp,
             base_study.experiments[1].timestamp,
+        ),
+        "group_index": groups[0].index,
+        "stems": groups[0].stems,
+        "value": None,
+        "std": None,
+        "count": 0,
+    }
+
+
+def test_group_scalar_series_pop_in_load_can_keep_empty_groups(
+    base_study,
+) -> None:
+    analyzed = base_study.detect_force_peaks()
+    one_peak_experiments = []
+    for experiment in analyzed.experiments:
+        one_peak_experiments.append(
+            replace(
+                experiment,
+                force_peaks=replace(
+                    experiment.force_peaks,
+                    peaks=experiment.force_peaks.peaks[:1],
+                    peak_count=1,
+                ),
+            )
+        )
+    partial = Study(experiments=tuple(one_peak_experiments))
+    groups = partial.group_by_time_gap()
+
+    rows = partial.group_scalar_series("pop_in_load", drop_missing=False)
+
+    assert len(rows) == len(groups)
+    assert rows[0] == {
+        "timestamp": _mean_timestamp(
+            partial.experiments[0].timestamp,
+            partial.experiments[1].timestamp,
         ),
         "group_index": groups[0].index,
         "stems": groups[0].stems,

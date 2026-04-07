@@ -51,6 +51,7 @@ study = load_folder("path/to/experiment-folder")
 filtered_study = study.classify_quality()
 filtered_study = filtered_study.analyze_oliver_pharr()
 hardness_rows = filtered_study.scalar_series("hardness")
+pop_in_rows = filtered_study.detect_force_peaks().scalar_series("pop_in_load")
 manual_groups = filtered_study.group_by_datetime_ranges(
     [
         (

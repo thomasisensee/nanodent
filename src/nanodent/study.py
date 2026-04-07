@@ -998,6 +998,7 @@ def _scalar_metric_getter(metric: str) -> Any:
             if experiment.force_peaks is None
             else experiment.force_peaks.peak_count
         ),
+        "pop_in_load": lambda experiment: _pop_in_load(experiment),
     }
     if metric not in registry:
         raise ValueError(
@@ -1005,6 +1006,17 @@ def _scalar_metric_getter(metric: str) -> Any:
             f"{', '.join(sorted(registry))}."
         )
     return registry[metric]
+
+
+def _pop_in_load(experiment: Experiment) -> float | None:
+    """Return the second-highest detected peak load for one experiment."""
+
+    force_peaks = experiment.force_peaks
+    if force_peaks is None or not force_peaks.success:
+        return None
+    if len(force_peaks.peaks) < 2:
+        return None
+    return min(float(peak.force_uN) for peak in force_peaks.peaks)
 
 
 def _average_timestamps(
