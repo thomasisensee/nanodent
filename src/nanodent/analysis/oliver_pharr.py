@@ -13,8 +13,6 @@ from nanodent.analysis.filters import savgol
 
 _LINEAR_FIT_MODEL = "linear_fraction"
 _POWER_LAW_FIT_MODEL = "power_law_full"
-_POWER_LAW_HF_FIT = "fit"
-_POWER_LAW_HF_FIXED_END = "fixed_end_disp"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +41,6 @@ class OliverPharrExperimentResult:
     power_law_k: float | None = None
     power_law_m: float | None = None
     power_law_hf_nm: float | None = None
-    power_law_hf_mode: str | None = None
     hardness_success: bool = False
     hardness_reason: str | None = None
     epsilon: float | None = None
@@ -84,7 +81,6 @@ class OliverPharrExperimentResult:
             "power_law_k": self.power_law_k,
             "power_law_m": self.power_law_m,
             "power_law_hf_nm": self.power_law_hf_nm,
-            "power_law_hf_mode": self.power_law_hf_mode,
             "hardness_success": self.hardness_success,
             "hardness_reason": self.hardness_reason,
             "epsilon": self.epsilon,
@@ -108,8 +104,6 @@ def analyze_oliver_pharr(
     unloading_fraction: float | None = None,
     smoothing: Mapping[str, Any] | None = None,
     fit_num_points: int = 200,
-    unloading_end_disp_nm: float | None = None,
-    power_law_hf_mode: Literal["fit", "fixed_end_disp"] = (_POWER_LAW_HF_FIT),
     onset_disp_nm: float | None = None,
     baseline_offset_uN: float | None = None,
     epsilon: float = 0.75,
@@ -135,10 +129,6 @@ def analyze_oliver_pharr(
             force before fitting.
         fit_num_points: Number of points used to evaluate the dense fitted
             curve for plotting.
-        unloading_end_disp_nm: Optional unloading-end displacement used by the
-            power-law mode when `power_law_hf_mode="fixed_end_disp"`.
-        power_law_hf_mode: Whether the power-law model fits `hf` or fixes it
-            to `unloading_end_disp_nm`.
         onset_disp_nm: Optional onset displacement used to compute
             onset-corrected hardness diagnostics.
         baseline_offset_uN: Optional force baseline offset subtracted before
@@ -168,13 +158,6 @@ def analyze_oliver_pharr(
     if fit_model not in {_LINEAR_FIT_MODEL, _POWER_LAW_FIT_MODEL}:
         raise ValueError(
             "fit_model must be 'linear_fraction' or 'power_law_full'."
-        )
-    if power_law_hf_mode not in {
-        _POWER_LAW_HF_FIT,
-        _POWER_LAW_HF_FIXED_END,
-    }:
-        raise ValueError(
-            "power_law_hf_mode must be 'fit' or 'fixed_end_disp'."
         )
     if fit_num_points < 2:
         raise ValueError("fit_num_points must be at least 2.")
@@ -216,12 +199,6 @@ def analyze_oliver_pharr(
     corrected_force = _apply_correction(
         active_force,
         correction=force_correction,
-    )
-    corrected_end_disp = (
-        None
-        if unloading_end_disp_nm is None
-        else float(unloading_end_disp_nm)
-        - (0.0 if disp_correction is None else disp_correction)
     )
 
     evaluation_force = float(corrected_force[0])
@@ -274,8 +251,6 @@ def analyze_oliver_pharr(
             evaluation_force_uN=evaluation_force,
             evaluation_disp_nm=evaluation_disp,
             fit_num_points=fit_num_points,
-            power_law_hf_mode=power_law_hf_mode,
-            unloading_end_disp_nm=corrected_end_disp,
             used_smoothing=frozen_smoothing is not None,
             smoothing=frozen_smoothing,
             disp_correction_nm=disp_correction,
@@ -476,8 +451,6 @@ def _fit_power_law_full(
     evaluation_force_uN: float,
     evaluation_disp_nm: float,
     fit_num_points: int,
-    power_law_hf_mode: str,
-    unloading_end_disp_nm: float | None,
     used_smoothing: bool,
     smoothing: Mapping[str, Any] | None,
     disp_correction_nm: float | None,
@@ -534,8 +507,6 @@ def _fit_power_law_full(
         ) = _power_law_fit_parameters(
             fit_disp=fit_disp,
             fit_force=fit_force,
-            power_law_hf_mode=power_law_hf_mode,
-            unloading_end_disp_nm=unloading_end_disp_nm,
         )
     except ValueError as exc:
         return _failed_result(
@@ -663,7 +634,6 @@ def _fit_power_law_full(
         power_law_k=fitted_k,
         power_law_m=fitted_m,
         power_law_hf_nm=fitted_hf,
-        power_law_hf_mode=power_law_hf_mode,
         x_fit=x_fit,
         y_fit=y_fit,
     )
@@ -673,29 +643,13 @@ def _power_law_fit_parameters(
     *,
     fit_disp: NDArray[np.float64],
     fit_force: NDArray[np.float64],
-    power_law_hf_mode: str,
-    unloading_end_disp_nm: float | None,
 ) -> tuple[float, float, float, NDArray[np.float64]]:
     """Return fitted power-law parameters and fitted-window values."""
 
-    if power_law_hf_mode == _POWER_LAW_HF_FIXED_END:
-        if unloading_end_disp_nm is None or not np.isfinite(
-            unloading_end_disp_nm
-        ):
-            raise ValueError("missing_unloading_end_disp")
-        fitted_hf = float(unloading_end_disp_nm)
-        if np.any(fit_disp < fitted_hf):
-            raise ValueError("invalid_power_law_domain")
-        fitted_k, fitted_m = _fit_power_law_with_fixed_hf(
-            fit_disp=fit_disp,
-            fit_force=fit_force,
-            hf_nm=fitted_hf,
-        )
-    else:
-        fitted_k, fitted_m, fitted_hf = _fit_power_law_with_fitted_hf(
-            fit_disp=fit_disp,
-            fit_force=fit_force,
-        )
+    fitted_k, fitted_m, fitted_hf = _fit_power_law_with_fitted_hf(
+        fit_disp=fit_disp,
+        fit_force=fit_force,
+    )
 
     if not np.isfinite([fitted_k, fitted_m, fitted_hf]).all():
         raise ValueError("fit_failed")
@@ -706,32 +660,6 @@ def _power_law_fit_parameters(
     if not np.isfinite(fitted_window).all():
         raise ValueError("fit_failed")
     return fitted_k, fitted_m, fitted_hf, fitted_window
-
-
-def _fit_power_law_with_fixed_hf(
-    *,
-    fit_disp: NDArray[np.float64],
-    fit_force: NDArray[np.float64],
-    hf_nm: float,
-) -> tuple[float, float]:
-    """Fit `k` and `m` with a fixed `hf`."""
-
-    delta = np.asarray(fit_disp - hf_nm, dtype=np.float64)
-    if np.any(delta < 0.0):
-        raise ValueError("invalid_power_law_domain")
-    initial_k, initial_m = _power_law_initial_guess(
-        fit_force=fit_force,
-        delta=delta,
-    )
-    parameters, _ = curve_fit(
-        lambda x_values, k, m: _power_law_model(x_values, k, m, hf_nm),
-        fit_disp,
-        fit_force,
-        p0=(initial_k, initial_m),
-        bounds=((0.0, 0.1), (np.inf, 10.0)),
-        maxfev=20000,
-    )
-    return float(parameters[0]), float(parameters[1])
 
 
 def _fit_power_law_with_fitted_hf(

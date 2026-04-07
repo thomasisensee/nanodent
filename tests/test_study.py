@@ -389,14 +389,12 @@ def test_analyze_oliver_pharr_forwards_power_law_options(base_study) -> None:
 
     analyzed = Study(experiments=(experiment,)).analyze_oliver_pharr(
         fit_model="power_law_full",
-        power_law_hf_mode="fixed_end_disp",
     )
     result = analyzed.experiments[0].oliver_pharr
 
     assert result is not None
     assert result.success is True
     assert result.fit_model == "power_law_full"
-    assert result.power_law_hf_mode == "fixed_end_disp"
     assert result.power_law_hf_nm == pytest.approx(
         analyzed.experiments[0].unloading.end_disp_nm
     )

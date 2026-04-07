@@ -272,7 +272,6 @@ class Study:
         unloading_fraction: float | None = None,
         smoothing: Mapping[str, Any] | None = None,
         fit_num_points: int = 200,
-        power_law_hf_mode: str = "fit",
         epsilon: float = 0.75,
         include_disabled: bool = False,
         overwrite: bool = False,
@@ -317,10 +316,6 @@ class Study:
                         unloading_fraction=unloading_fraction,
                         smoothing=smoothing,
                         fit_num_points=fit_num_points,
-                        unloading_end_disp_nm=None
-                        if unloading is None
-                        else unloading.end_disp_nm,
-                        power_law_hf_mode=power_law_hf_mode,
                         onset_disp_nm=(
                             None
                             if updated.onset is None

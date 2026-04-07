@@ -26,7 +26,6 @@ def _make_experiment() -> Experiment:
 def _make_experiment_with_fit(
     *,
     fit_model: str = "linear_fraction",
-    power_law_hf_mode: str = "fit",
 ) -> Experiment:
     load_disp = np.linspace(0.0, 100.0, 101)
     load_force = 0.01 * load_disp**2
@@ -81,10 +80,6 @@ def _make_experiment_with_fit(
             unloading_fraction=0.25
             if fit_model == "linear_fraction"
             else None,
-            unloading_end_disp_nm=float(disp[-1])
-            if fit_model == "power_law_full"
-            else None,
-            power_law_hf_mode=power_law_hf_mode,
             onset_disp_nm=experiment.onset.onset_disp_nm,
             baseline_offset_uN=experiment.onset.baseline_offset_uN,
             stem="synthetic",
@@ -161,10 +156,7 @@ def test_plot_experiments_can_draw_evaluation_marker_when_requested() -> None:
 
 
 def test_plot_experiments_power_law_marker_uses_inverse_fit_point() -> None:
-    experiment = _make_experiment_with_fit(
-        fit_model="power_law_full",
-        power_law_hf_mode="fixed_end_disp",
-    )
+    experiment = _make_experiment_with_fit(fit_model="power_law_full")
     figure, ax = plt.subplots()
 
     plot_experiments(
@@ -186,10 +178,7 @@ def test_plot_experiments_power_law_marker_uses_inverse_fit_point() -> None:
 
 
 def test_plot_experiments_omits_linear_extension_for_power_law_fit() -> None:
-    experiment = _make_experiment_with_fit(
-        fit_model="power_law_full",
-        power_law_hf_mode="fixed_end_disp",
-    )
+    experiment = _make_experiment_with_fit(fit_model="power_law_full")
     figure, ax = plt.subplots()
 
     plot_experiments(ax, experiment)
