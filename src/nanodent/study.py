@@ -18,6 +18,9 @@ from nanodent.analysis.oliver_pharr import (
 )
 from nanodent.analysis.onset import detect_onset as _detect_onset
 from nanodent.analysis.quality import classify_quality as _classify_quality
+from nanodent.analysis.unloading import (
+    detect_unloading as _detect_unloading,
+)
 from nanodent.models import Experiment
 
 _SESSION_FORMAT_VERSION = 1
@@ -293,23 +296,37 @@ class Study:
                 skipped.append(experiment.stem)
                 experiments.append(experiment)
                 continue
+            updated = experiment
+            unloading = updated.unloading
+            if not _has_successful_result(unloading):
+                updated = updated.with_unloading(
+                    _detect_unloading(
+                        updated.trace["force_uN"],
+                        time_s=updated.trace["time_s"],
+                        disp_nm=updated.trace["disp_nm"],
+                    )
+                )
+                unloading = updated.unloading
             experiments.append(
-                experiment.with_oliver_pharr(
+                updated.with_oliver_pharr(
                     _analyze_oliver_pharr(
-                        experiment.trace["disp_nm"],
-                        experiment.trace["force_uN"],
+                        updated.trace["disp_nm"],
+                        updated.trace["force_uN"],
                         unloading_fraction=unloading_fraction,
                         smoothing=smoothing,
                         fit_num_points=fit_num_points,
                         use_force_peak=use_force_peak,
+                        unloading_start_index=None
+                        if unloading is None
+                        else unloading.start_index,
                         onset_disp_nm=(
-                            experiment.onset.onset_disp_nm
-                            if experiment.onset is not None
-                            and experiment.onset.success
+                            updated.onset.onset_disp_nm
+                            if updated.onset is not None
+                            and updated.onset.success
                             else None
                         ),
                         epsilon=epsilon,
-                        stem=experiment.stem,
+                        stem=updated.stem,
                     )
                 )
             )
@@ -423,6 +440,53 @@ class Study:
         self._warn_skipped_results(
             analysis_name="force-peak detection",
             skipped_stems=skipped,
+        )
+        return Study(experiments=tuple(experiments))
+
+    def detect_unloading(
+        self,
+        *,
+        stems: Iterable[str] | str | None = None,
+        include_disabled: bool = False,
+        overwrite: bool = False,
+    ) -> "Study":
+        """Detect unloading-start indices on selected experiments."""
+
+        selected_stems = self._selected_stem_set(
+            stems=stems,
+            include_disabled=include_disabled,
+        )
+        skipped: list[str] = []
+        invalidated_oliver_pharr: list[str] = []
+        experiments: list[Experiment] = []
+        for experiment in self.experiments:
+            if experiment.stem not in selected_stems:
+                experiments.append(experiment)
+                continue
+            if not overwrite and _has_successful_result(experiment.unloading):
+                skipped.append(experiment.stem)
+                experiments.append(experiment)
+                continue
+
+            updated = experiment.with_unloading(
+                _detect_unloading(
+                    experiment.trace["force_uN"],
+                    time_s=experiment.trace["time_s"],
+                    disp_nm=experiment.trace["disp_nm"],
+                )
+            )
+            if experiment.oliver_pharr is not None:
+                updated = updated.with_oliver_pharr(None)
+                invalidated_oliver_pharr.append(experiment.stem)
+            experiments.append(updated)
+        self._warn_skipped_results(
+            analysis_name="unloading detection",
+            skipped_stems=skipped,
+        )
+        self._warn_invalidated_results(
+            dependency_name="Oliver-Pharr",
+            reason="unloading results were recomputed",
+            stems=invalidated_oliver_pharr,
         )
         return Study(experiments=tuple(experiments))
 
@@ -574,6 +638,7 @@ class Study:
             "enabled state": [],
             "onset": [],
             "force peaks": [],
+            "unloading": [],
             "Oliver-Pharr": [],
         }
 
@@ -621,6 +686,16 @@ class Study:
             )
             if peaks_conflict:
                 state_conflicts["force peaks"].append(experiment.stem)
+
+            current, unloading_conflict = _apply_saved_analysis_result(
+                current,
+                saved_result=saved.get("unloading"),
+                current_result=current.unloading,
+                overwrite=overwrite,
+                result_name="unloading",
+            )
+            if unloading_conflict:
+                state_conflicts["unloading"].append(experiment.stem)
 
             current, oliver_conflict = _apply_saved_analysis_result(
                 current,
@@ -874,6 +949,7 @@ def _session_entry(experiment: Experiment) -> dict[str, Any]:
         "disabled_reason": experiment.disabled_reason,
         "onset": _make_pickle_safe(experiment.onset),
         "force_peaks": _make_pickle_safe(experiment.force_peaks),
+        "unloading": _make_pickle_safe(experiment.unloading),
         "oliver_pharr": _make_pickle_safe(experiment.oliver_pharr),
     }
 
@@ -968,6 +1044,8 @@ def _replace_analysis_result(
         return experiment.with_onset(result)
     if result_name == "force_peaks":
         return experiment.with_force_peaks(result)
+    if result_name == "unloading":
+        return experiment.with_unloading(result)
     if result_name == "oliver_pharr":
         return experiment.with_oliver_pharr(result)
     raise ValueError(f"Unknown analysis result {result_name!r}.")

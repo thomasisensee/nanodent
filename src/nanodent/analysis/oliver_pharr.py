@@ -82,6 +82,7 @@ def analyze_oliver_pharr(
     smoothing: Mapping[str, Any] | None = None,
     fit_num_points: int = 200,
     use_force_peak: bool = True,
+    unloading_start_index: int | None = None,
     onset_disp_nm: float | None = None,
     epsilon: float = 0.75,
     stem: str = "",
@@ -99,6 +100,8 @@ def analyze_oliver_pharr(
             force before peak detection and fitting.
         fit_num_points: Number of points used to evaluate the dense fitted
             straight line for plotting.
+        unloading_start_index: Optional index of the unloading-start sample.
+            When provided, this overrides internal peak-based selection.
         onset_disp_nm: Optional onset displacement used to compute
             onset-corrected hardness diagnostics.
         epsilon: Geometry factor used for contact-depth estimation.
@@ -137,7 +140,14 @@ def analyze_oliver_pharr(
     peak_force_index = int(np.argmax(active_force))
     peak_disp_index = int(np.argmax(active_disp))
 
-    peak = peak_force_index if use_force_peak else peak_disp_index
+    if unloading_start_index is None:
+        peak = peak_force_index if use_force_peak else peak_disp_index
+    else:
+        peak = int(unloading_start_index)
+        if peak < 0 or peak >= len(active_force):
+            raise ValueError(
+                "unloading_start_index must refer to a valid sample."
+            )
     peak_force = float(active_force[peak])
     peak_disp = float(active_disp[peak])
 

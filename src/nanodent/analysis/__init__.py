@@ -20,6 +20,10 @@ from nanodent.analysis.quality import (
     classify_peak_balance,
     classify_quality,
 )
+from nanodent.analysis.unloading import (
+    UnloadingDetectionResult,
+    detect_unloading,
+)
 
 __all__ = [
     "ForcePeakDetectionResult",
@@ -27,8 +31,10 @@ __all__ = [
     "OnsetDetectionResult",
     "OliverPharrExperimentResult",
     "QualityCheckResult",
+    "UnloadingDetectionResult",
     "detect_force_peaks",
     "detect_onset",
+    "detect_unloading",
     "analyze_oliver_pharr",
     "classify_gradual_onset",
     "classify_high_displacement",

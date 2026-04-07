@@ -9,6 +9,7 @@ import pytest
 from nanodent.analysis.force_peaks import detect_force_peaks
 from nanodent.analysis.oliver_pharr import analyze_oliver_pharr
 from nanodent.analysis.onset import detect_onset
+from nanodent.analysis.unloading import detect_unloading
 from nanodent.models import Experiment, ExperimentPaths, SignalTable
 from nanodent.plotting import (
     _decorate_saved_experiment_axes,
@@ -62,8 +63,16 @@ def _make_experiment() -> Experiment:
             disp,
             force,
             unloading_fraction=0.25,
+            unloading_start_index=100,
             onset_disp_nm=experiment.onset.onset_disp_nm,
             stem="synthetic",
+        )
+    )
+    experiment = experiment.with_unloading(
+        detect_unloading(
+            force,
+            time_s=time,
+            disp_nm=disp,
         )
     )
     return experiment.with_force_peaks(
@@ -136,6 +145,23 @@ def test_plot_experiments_can_hide_attached_oliver_pharr_overlay() -> None:
     plot_experiments(ax, experiment, show_oliver_pharr=False)
 
     assert len(ax.lines) == 1
+    plt.close(figure)
+
+
+def test_plot_experiments_can_draw_unloading_overlay_when_requested() -> None:
+    experiment = _make_experiment()
+    figure, ax = plt.subplots()
+
+    plot_experiments(ax, experiment, show_unloading=True)
+
+    assert len(ax.lines) == 4
+    assert np.array_equal(
+        ax.lines[1].get_xdata(),
+        np.asarray(experiment.test["disp_nm"], dtype=np.float64)[
+            experiment.unloading.start_index :
+        ],
+    )
+    assert ax.lines[1].get_alpha() == pytest.approx(0.75)
     plt.close(figure)
 
 

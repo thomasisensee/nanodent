@@ -13,6 +13,7 @@ from nanodent.analysis.quality import (
     classify_peak_balance,
     classify_quality,
 )
+from nanodent.analysis.unloading import detect_unloading
 
 
 def _make_linear_unloading_curve() -> tuple[np.ndarray, np.ndarray]:
@@ -312,6 +313,40 @@ def test_detect_force_peaks_validates_aligned_inputs() -> None:
         detect_force_peaks(force, disp_nm=np.arange(19, dtype=np.float64))
 
 
+def test_detect_unloading_uses_global_max_force_with_coordinates() -> None:
+    time = np.arange(6, dtype=np.float64) * 0.5
+    disp = np.linspace(0.0, 5.0, 6, dtype=np.float64)
+    force = np.array([0.0, 1.0, 4.0, 7.0, 5.0, 3.0], dtype=np.float64)
+
+    result = detect_unloading(
+        force,
+        time_s=time,
+        disp_nm=disp,
+    )
+
+    assert result.success is True
+    assert result.reason is None
+    assert result.method == "max_force"
+    assert result.start_index == 3
+    assert result.start_time_s == pytest.approx(time[3])
+    assert result.start_disp_nm == pytest.approx(disp[3])
+    assert result.start_force_uN == pytest.approx(force[3])
+    assert result.end_disp_nm == pytest.approx(disp[-1])
+
+
+def test_detect_unloading_validates_inputs_and_method() -> None:
+    force = np.linspace(0.0, 1.0, 20, dtype=np.float64)
+
+    with pytest.raises(ValueError, match="time_s"):
+        detect_unloading(force, time_s=np.arange(19, dtype=np.float64))
+
+    with pytest.raises(ValueError, match="disp_nm"):
+        detect_unloading(force, disp_nm=np.arange(19, dtype=np.float64))
+
+    with pytest.raises(ValueError, match="method"):
+        detect_unloading(force, method="invalid")
+
+
 def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
     x, y = _make_linear_unloading_curve()
 
@@ -371,6 +406,29 @@ def test_analyze_oliver_pharr_uses_smoothed_signals_for_peak_detection() -> (
         "polyorder": 2,
     }
     assert smoothed_result.peak_index == pytest.approx(100, abs=2)
+
+
+def test_analyze_oliver_pharr_can_reuse_precomputed_unloading_start() -> None:
+    x, y = _make_spiky_peak_curve()
+
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        unloading_fraction=0.25,
+        smoothing={"window_length": 21, "polyorder": 2},
+        unloading_start_index=70,
+    )
+
+    assert result.success is True
+    assert result.peak_index == 70
+    assert result.unloading_start_index == 70
+
+
+def test_analyze_oliver_pharr_validates_explicit_unloading_start() -> None:
+    x, y = _make_linear_unloading_curve()
+
+    with pytest.raises(ValueError, match="unloading_start_index"):
+        analyze_oliver_pharr(x, y, unloading_start_index=len(x))
 
 
 def test_analyze_oliver_pharr_rejects_invalid_unloading_fraction() -> None:

@@ -116,7 +116,9 @@ def plot_experiments(
     max_gap: timedelta = timedelta(minutes=30),
     selection: Literal["enabled", "disabled", "both"] = "enabled",
     zero_onset: bool = False,
+    show_unloading: bool = False,
     show_oliver_pharr: bool = True,
+    unloading_kwargs: Mapping[str, Any] | None = None,
     fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
 ) -> Axes:
@@ -156,6 +158,14 @@ def plot_experiments(
             label=experiment.stem,
             **curve_kwargs,
         )
+        _plot_unloading_overlay(
+            ax,
+            experiment=experiment,
+            curve=curve,
+            show_unloading=show_unloading and use_force_displacement,
+            curve_kwargs=curve_kwargs,
+            unloading_kwargs=unloading_kwargs,
+        )
 
         fit_result = (
             experiment.oliver_pharr
@@ -186,6 +196,7 @@ def save_experiment_plots(
     selection: Literal["enabled", "disabled", "both"] = "enabled",
     zero_onset: bool = False,
     show_oliver_pharr: bool = True,
+    unloading_kwargs: Mapping[str, Any] | None = None,
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] | None = None,
     image_format: str = "png",
@@ -220,7 +231,9 @@ def save_experiment_plots(
             max_gap=max_gap,
             selection="both",
             zero_onset=zero_onset,
+            show_unloading=True,
             show_oliver_pharr=show_oliver_pharr,
+            unloading_kwargs=unloading_kwargs,
             fit_kwargs=fit_kwargs,
             **line_kwargs,
         )
@@ -252,56 +265,6 @@ def save_experiment_plots(
             plt.close(figure)
 
     return saved_paths
-
-
-def _plot_scalar_over_time(
-    ax: Axes,
-    target: PlotSelection,
-    *,
-    study: Study | None,
-    max_gap: timedelta,
-    selection: Literal["enabled", "disabled", "both"],
-    marker: str,
-    markersize: float,
-    color: str,
-    ylabel: str,
-    title: str,
-    value_getter: Any,
-    **scatter_kwargs: Any,
-) -> Axes:
-    """Plot one scalar experiment result against acquisition time."""
-
-    experiments = _coerce_experiments(
-        target,
-        study=study,
-        max_gap=max_gap,
-        selection=selection,
-    )
-    timestamps: list[float] = []
-    values: list[float] = []
-    for experiment in experiments:
-        value = value_getter(experiment)
-        if value is None:
-            continue
-        timestamps.append(mdates.date2num(experiment.timestamp))
-        values.append(float(value))
-
-    plot_kwargs = dict(scatter_kwargs)
-    plot_kwargs.setdefault("linestyle", "")
-    plot_kwargs.setdefault("marker", marker)
-    plot_kwargs.setdefault("markersize", markersize)
-    plot_kwargs.setdefault("color", color)
-    if timestamps:
-        ax.plot(timestamps, values, **plot_kwargs)
-
-    ax.xaxis_date()
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d\n%H:%M"))
-    ax.set_xlabel("Acquisition time")
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.grid(axis="x", alpha=0.3)
-    ax.figure.autofmt_xdate()
-    return ax
 
 
 def _decorate_saved_experiment_axes(
@@ -372,6 +335,49 @@ def _plot_oliver_pharr_overlay(
         "label": "_nolegend_",
     }
     ax.plot(x_values, y_values, **extension_kwargs)
+
+
+def _plot_unloading_overlay(
+    ax: Axes,
+    *,
+    experiment: Experiment,
+    curve: "_PreparedCurve",
+    show_unloading: bool,
+    curve_kwargs: Mapping[str, Any],
+    unloading_kwargs: Mapping[str, Any] | None = None,
+) -> None:
+    """Overlay the detected unloading branch for saved-plot inspection."""
+
+    if not show_unloading:
+        return
+    unloading = experiment.unloading
+    if unloading is None or not unloading.success:
+        return
+    if unloading.start_index is None:
+        return
+
+    start_index = int(unloading.start_index)
+    if start_index < 0 or start_index >= len(curve.x_values):
+        return
+
+    overlay_kwargs = {
+        "color": curve_kwargs.get("color", "black"),
+        "alpha": 0.75,
+        "linewidth": max(
+            float(curve_kwargs.get("linewidth", 1.5)) * 1.15,
+            1.0,
+        ),
+        "linestyle": curve_kwargs.get("linestyle", "-"),
+        "label": "_nolegend_",
+        "zorder": max(float(curve_kwargs.get("zorder", 2.0)) + 0.1, 0.0),
+    }
+    if unloading_kwargs is not None:
+        overlay_kwargs.update(dict(unloading_kwargs))
+    ax.plot(
+        curve.x_values[start_index:],
+        curve.y_values[start_index:],
+        **overlay_kwargs,
+    )
 
 
 def _uses_force_displacement_axes(*, section: str, x: str, y: str) -> bool:

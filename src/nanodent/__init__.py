@@ -24,6 +24,10 @@ from nanodent.analysis.quality import (
     classify_peak_balance,
     classify_quality,
 )
+from nanodent.analysis.unloading import (
+    UnloadingDetectionResult,
+    detect_unloading,
+)
 from nanodent.io import load_experiment, load_folder
 from nanodent.models import (
     Experiment,
@@ -52,6 +56,7 @@ __all__ = [
     "OnsetDetectionResult",
     "OliverPharrExperimentResult",
     "QualityCheckResult",
+    "UnloadingDetectionResult",
     "MetadataEntry",
     "SegmentDefinition",
     "SignalTable",
@@ -59,6 +64,7 @@ __all__ = [
     "__version__",
     "detect_force_peaks",
     "detect_onset",
+    "detect_unloading",
     "analyze_oliver_pharr",
     "classify_gradual_onset",
     "classify_high_displacement",

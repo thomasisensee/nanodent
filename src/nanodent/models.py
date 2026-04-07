@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from nanodent.analysis.force_peaks import ForcePeakDetectionResult
     from nanodent.analysis.oliver_pharr import OliverPharrExperimentResult
     from nanodent.analysis.onset import OnsetDetectionResult
+    from nanodent.analysis.unloading import UnloadingDetectionResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +126,7 @@ class Experiment:
     disabled_reason: str | None = None
     onset: "OnsetDetectionResult | None" = None
     force_peaks: "ForcePeakDetectionResult | None" = None
+    unloading: "UnloadingDetectionResult | None" = None
     oliver_pharr: "OliverPharrExperimentResult | None" = None
 
     def __post_init__(self) -> None:
@@ -252,6 +254,13 @@ class Experiment:
         """Return a copy of the experiment with updated force peaks."""
 
         return replace(self, force_peaks=result)
+
+    def with_unloading(
+        self, result: "UnloadingDetectionResult | None"
+    ) -> "Experiment":
+        """Return a copy of the experiment with updated unloading data."""
+
+        return replace(self, unloading=result)
 
     @classmethod
     def from_measurements(

@@ -604,6 +604,61 @@ def test_detect_force_peaks_preserves_unselected_results(
     assert by_stem[EXPERIMENT_A].force_peaks is not None
 
 
+def test_detect_unloading_attaches_results(base_study) -> None:
+    analyzed = base_study.detect_unloading()
+    detected = analyzed.experiments[0].unloading
+
+    assert detected is not None
+    assert detected.success is True
+    assert detected.start_index is not None
+    assert detected.start_force_uN == pytest.approx(
+        np.max(base_study.experiments[0].test["force_uN"])
+    )
+
+
+def test_detect_unloading_skips_disabled_experiments_by_default(
+    base_study,
+) -> None:
+    study = base_study.disable_experiments(EXPERIMENT_A)
+
+    analyzed = study.detect_unloading()
+    by_stem = {
+        experiment.stem: experiment for experiment in analyzed.experiments
+    }
+
+    assert analyzed is not study
+    assert by_stem[EXPERIMENT_A].unloading is None
+    assert by_stem[EXPERIMENT_B].unloading is not None
+
+
+def test_detect_unloading_overwrite_clears_dependent_oliver_pharr(
+    base_study,
+) -> None:
+    analyzed = base_study.detect_unloading().analyze_oliver_pharr()
+
+    with pytest.warns(UserWarning, match="Cleared Oliver-Pharr"):
+        rerun = analyzed.detect_unloading(stems=EXPERIMENT_A, overwrite=True)
+
+    by_stem = {experiment.stem: experiment for experiment in rerun.experiments}
+    assert by_stem[EXPERIMENT_A].unloading is not None
+    assert by_stem[EXPERIMENT_A].oliver_pharr is None
+    assert by_stem[EXPERIMENT_B].oliver_pharr is not None
+
+
+def test_analyze_oliver_pharr_auto_attaches_unloading_when_missing(
+    base_study,
+) -> None:
+    analyzed = base_study.analyze_oliver_pharr()
+    experiment = analyzed.experiments[0]
+
+    assert experiment.unloading is not None
+    assert experiment.unloading.success is True
+    assert experiment.oliver_pharr is not None
+    assert experiment.oliver_pharr.unloading_start_index == (
+        experiment.unloading.start_index
+    )
+
+
 def test_scalar_series_returns_timestamped_rows(base_study) -> None:
     analyzed = (
         base_study.detect_onset().detect_force_peaks().analyze_oliver_pharr()
@@ -698,6 +753,7 @@ def test_save_and_load_session_restores_results(
     )
     assert by_stem[EXPERIMENT_A].onset.baseline_offset_uN is not None
     assert by_stem[EXPERIMENT_B].force_peaks is not None
+    assert by_stem[EXPERIMENT_B].unloading is not None
     assert by_stem[EXPERIMENT_B].oliver_pharr is not None
 
 
