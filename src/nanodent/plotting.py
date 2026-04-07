@@ -312,10 +312,11 @@ def _plot_oliver_pharr_overlay(
     }
     if fit_kwargs is not None:
         overlay_kwargs.update(dict(fit_kwargs))
-    x_fit = np.asarray(fit_result.x_fit, dtype=np.float64)
-    if onset_offset is not None:
-        x_fit = x_fit - onset_offset
-    ax.plot(x_fit, fit_result.y_fit, **overlay_kwargs)
+    x_fit, y_fit = _oliver_pharr_plot_curve(
+        fit_result,
+        onset_offset=onset_offset,
+    )
+    ax.plot(x_fit, y_fit, **overlay_kwargs)
 
     extension_segment = _oliver_pharr_extension_segment(
         fit_result, onset_offset=onset_offset
@@ -623,10 +624,43 @@ def _oliver_pharr_extension_segment(
         * fit_result.linear_depth_intercept_nm
     )
     end_x = float(fit_result.x_fit[0])
-    start_x = _shift_axis_value(start_x, onset_offset)
-    end_x = _shift_axis_value(end_x, onset_offset)
-    end_y = float(fit_result.y_fit[0])
+    disp_correction = _fit_result_disp_correction(fit_result)
+    force_correction = _fit_result_force_correction(fit_result)
+    start_x = _shift_axis_value(start_x + disp_correction, onset_offset)
+    end_x = _shift_axis_value(end_x + disp_correction, onset_offset)
+    start_y += force_correction
+    end_y = float(fit_result.y_fit[0]) + force_correction
     return [start_x, end_x], [start_y, end_y]
+
+
+def _oliver_pharr_plot_curve(
+    fit_result: Any,
+    *,
+    onset_offset: float | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return fit-curve coordinates mapped onto the raw plotting axes."""
+
+    x_fit = np.asarray(fit_result.x_fit, dtype=np.float64)
+    y_fit = np.asarray(fit_result.y_fit, dtype=np.float64)
+    x_fit = x_fit + _fit_result_disp_correction(fit_result)
+    y_fit = y_fit + _fit_result_force_correction(fit_result)
+    if onset_offset is not None:
+        x_fit = x_fit - onset_offset
+    return x_fit, y_fit
+
+
+def _fit_result_disp_correction(fit_result: Any) -> float:
+    """Return the displacement correction stored on one OP result."""
+
+    correction = getattr(fit_result, "disp_correction_nm", None)
+    return 0.0 if correction is None else float(correction)
+
+
+def _fit_result_force_correction(fit_result: Any) -> float:
+    """Return the force correction stored on one OP result."""
+
+    correction = getattr(fit_result, "force_correction_uN", None)
+    return 0.0 if correction is None else float(correction)
 
 
 def _experiment_output_name(

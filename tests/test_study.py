@@ -246,6 +246,12 @@ def test_analyze_oliver_pharr_attaches_hardness_after_onset_detection(
     assert by_stem[EXPERIMENT_A].oliver_pharr.onset_disp_nm == pytest.approx(
         by_stem[EXPERIMENT_A].onset.onset_disp_nm
     )
+    assert by_stem[EXPERIMENT_A].oliver_pharr.disp_correction_nm == (
+        pytest.approx(by_stem[EXPERIMENT_A].onset.onset_disp_nm)
+    )
+    assert by_stem[EXPERIMENT_A].oliver_pharr.force_correction_uN == (
+        pytest.approx(by_stem[EXPERIMENT_A].onset.baseline_offset_uN)
+    )
     assert by_stem[EXPERIMENT_A].oliver_pharr.hardness_reason != (
         "missing_onset"
     )
@@ -380,6 +386,52 @@ def test_analyze_oliver_pharr_forwards_power_law_options(base_study) -> None:
     assert result.power_law_hf_mode == "fixed_end_disp"
     assert result.power_law_hf_nm == pytest.approx(
         analyzed.experiments[0].unloading.end_disp_nm
+    )
+
+
+def test_analyze_oliver_pharr_uses_baseline_offset_without_successful_onset(
+    base_study,
+) -> None:
+    disp = np.concatenate(
+        [
+            np.linspace(0.0, 100.0, 101),
+            np.linspace(100.0, 80.0, 41)[1:],
+        ]
+    )
+    force = np.concatenate(
+        [
+            0.01 * np.linspace(0.0, 100.0, 101) ** 2,
+            5.0 * np.linspace(100.0, 80.0, 41)[1:] - 400.0,
+        ]
+    )
+    force = force + 4.0
+    test_section = SignalTable(
+        columns={
+            "time_s": np.arange(len(disp), dtype=np.float64),
+            "disp_nm": disp,
+            "force_uN": force,
+        },
+        point_count=len(disp),
+        raw_columns=("Time_s", "Disp_nm", "Force_uN"),
+    )
+    experiment = replace(base_study.experiments[0], test=test_section)
+    study = Study(experiments=(experiment,)).detect_onset(
+        baseline_points=20,
+        k=1000.0,
+        consecutive=3,
+    )
+
+    analyzed = study.analyze_oliver_pharr()
+    result = analyzed.experiments[0].oliver_pharr
+
+    assert result is not None
+    assert result.success is True
+    assert study.experiments[0].onset.success is False
+    assert result.force_correction_uN == pytest.approx(
+        analyzed.experiments[0].onset.baseline_offset_uN
+    )
+    assert result.evaluation_force_uN == pytest.approx(
+        float(np.max(force) - analyzed.experiments[0].onset.baseline_offset_uN)
     )
 
 

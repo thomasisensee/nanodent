@@ -327,10 +327,14 @@ class Study:
                         else unloading.end_disp_nm,
                         power_law_hf_mode=power_law_hf_mode,
                         onset_disp_nm=(
-                            updated.onset.onset_disp_nm
-                            if updated.onset is not None
-                            and updated.onset.success
-                            else None
+                            None
+                            if updated.onset is None
+                            else updated.onset.onset_disp_nm
+                        ),
+                        baseline_offset_uN=(
+                            None
+                            if updated.onset is None
+                            else updated.onset.baseline_offset_uN
                         ),
                         epsilon=epsilon,
                         stem=updated.stem,

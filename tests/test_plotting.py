@@ -86,6 +86,7 @@ def _make_experiment_with_fit(
             else None,
             power_law_hf_mode=power_law_hf_mode,
             onset_disp_nm=experiment.onset.onset_disp_nm,
+            baseline_offset_uN=experiment.onset.baseline_offset_uN,
             stem="synthetic",
         )
     )
@@ -125,6 +126,11 @@ def test_plot_experiments_draws_attached_oliver_pharr_overlay() -> None:
     assert ax.lines[1].get_label() == "synthetic fit"
     assert ax.lines[2].get_label() == "_nolegend_"
     assert ax.lines[2].get_linestyle() == ":"
+    assert np.allclose(
+        ax.lines[1].get_xdata(),
+        np.asarray(experiment.oliver_pharr.x_fit, dtype=np.float64)
+        + float(experiment.oliver_pharr.disp_correction_nm or 0.0),
+    )
     plt.close(figure)
 
 
@@ -225,12 +231,11 @@ def test_plot_experiments_can_zero_displacement_at_onset() -> None:
     assert curve_x[0] == -onset_disp
     assert np.allclose(
         fit_x,
-        np.asarray(experiment.oliver_pharr.x_fit, dtype=np.float64)
-        - onset_disp,
+        np.asarray(experiment.oliver_pharr.x_fit, dtype=np.float64),
     )
     assert np.allclose(
         extension_x[1],
-        float(experiment.oliver_pharr.x_fit[0]) - onset_disp,
+        float(experiment.oliver_pharr.x_fit[0]),
     )
     plt.close(figure)
 
@@ -267,7 +272,8 @@ def test_plot_experiments_leaves_curve_unchanged_without_usable_onset() -> (
     )
     assert np.array_equal(
         ax.lines[1].get_xdata(),
-        np.asarray(experiment.oliver_pharr.x_fit, dtype=np.float64),
+        np.asarray(experiment.oliver_pharr.x_fit, dtype=np.float64)
+        + float(experiment.oliver_pharr.disp_correction_nm or 0.0),
     )
     plt.close(figure)
 

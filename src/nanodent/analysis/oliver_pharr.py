@@ -33,6 +33,8 @@ class OliverPharrExperimentResult:
     fit_point_count: int = 0
     used_smoothing: bool = False
     smoothing: Mapping[str, Any] | None = None
+    disp_correction_nm: float | None = None
+    force_correction_uN: float | None = None
     stiffness_uN_per_nm: float | None = None
     r_squared: float | None = None
     linear_slope_uN_per_nm: float | None = None
@@ -72,6 +74,8 @@ class OliverPharrExperimentResult:
             "unloading_start_index": self.unloading_start_index,
             "unloading_end_index": self.unloading_end_index,
             "fit_point_count": self.fit_point_count,
+            "disp_correction_nm": self.disp_correction_nm,
+            "force_correction_uN": self.force_correction_uN,
             "stiffness_uN_per_nm": self.stiffness_uN_per_nm,
             "r_squared": self.r_squared,
             "linear_slope_uN_per_nm": self.linear_slope_uN_per_nm,
@@ -108,6 +112,7 @@ def analyze_oliver_pharr(
     unloading_end_disp_nm: float | None = None,
     power_law_hf_mode: Literal["fit", "fixed_end_disp"] = (_POWER_LAW_HF_FIT),
     onset_disp_nm: float | None = None,
+    baseline_offset_uN: float | None = None,
     epsilon: float = 0.75,
     stem: str = "",
 ) -> OliverPharrExperimentResult:
@@ -138,6 +143,8 @@ def analyze_oliver_pharr(
             to `unloading_end_disp_nm`.
         onset_disp_nm: Optional onset displacement used to compute
             onset-corrected hardness diagnostics.
+        baseline_offset_uN: Optional force baseline offset subtracted before
+            evaluation and fitting.
         epsilon: Geometry factor used for contact-depth estimation.
         stem: Optional experiment label propagated by higher-level wrappers.
 
@@ -195,15 +202,34 @@ def analyze_oliver_pharr(
         active_disp = savgol(disp_array, **smoothing_kwargs)
         active_force = savgol(force_array, **smoothing_kwargs)
 
+    disp_correction = None if onset_disp_nm is None else float(onset_disp_nm)
+    force_correction = (
+        None if baseline_offset_uN is None else float(baseline_offset_uN)
+    )
+    corrected_disp = _apply_correction(
+        active_disp,
+        correction=disp_correction,
+    )
+    corrected_force = _apply_correction(
+        active_force,
+        correction=force_correction,
+    )
+    corrected_end_disp = (
+        None
+        if unloading_end_disp_nm is None
+        else float(unloading_end_disp_nm)
+        - (0.0 if disp_correction is None else disp_correction)
+    )
+
     evaluation_index = _evaluation_index(
-        active_disp=active_disp,
-        active_force=active_force,
+        active_disp=corrected_disp,
+        active_force=corrected_force,
         use_force_peak=use_force_peak,
         unloading_start_index=unloading_start_index,
     )
-    evaluation_force = float(active_force[evaluation_index])
-    evaluation_disp = float(active_disp[evaluation_index])
-    if evaluation_index >= len(active_force) - 1:
+    evaluation_force = float(corrected_force[evaluation_index])
+    evaluation_disp = float(corrected_disp[evaluation_index])
+    if evaluation_index >= len(corrected_force) - 1:
         return _failed_result(
             stem=stem,
             reason="no_unloading_branch",
@@ -216,12 +242,14 @@ def analyze_oliver_pharr(
             fit_point_count=1,
             used_smoothing=frozen_smoothing is not None,
             smoothing=frozen_smoothing,
+            disp_correction_nm=disp_correction,
+            force_correction_uN=force_correction,
         )
 
     if fit_model == _LINEAR_FIT_MODEL:
         result = _fit_linear_fraction(
-            active_disp=active_disp,
-            active_force=active_force,
+            active_disp=corrected_disp,
+            active_force=corrected_force,
             stem=stem,
             evaluation_index=evaluation_index,
             evaluation_force_uN=evaluation_force,
@@ -230,20 +258,24 @@ def analyze_oliver_pharr(
             fit_num_points=fit_num_points,
             used_smoothing=frozen_smoothing is not None,
             smoothing=frozen_smoothing,
+            disp_correction_nm=disp_correction,
+            force_correction_uN=force_correction,
         )
     else:
         result = _fit_power_law_full(
-            active_disp=active_disp,
-            active_force=active_force,
+            active_disp=corrected_disp,
+            active_force=corrected_force,
             stem=stem,
             evaluation_index=evaluation_index,
             evaluation_force_uN=evaluation_force,
             evaluation_disp_nm=evaluation_disp,
             fit_num_points=fit_num_points,
             power_law_hf_mode=power_law_hf_mode,
-            unloading_end_disp_nm=unloading_end_disp_nm,
+            unloading_end_disp_nm=corrected_end_disp,
             used_smoothing=frozen_smoothing is not None,
             smoothing=frozen_smoothing,
+            disp_correction_nm=disp_correction,
+            force_correction_uN=force_correction,
         )
     return _attach_hardness(
         result,
@@ -286,6 +318,8 @@ def _fit_linear_fraction(
     fit_num_points: int,
     used_smoothing: bool,
     smoothing: Mapping[str, Any] | None,
+    disp_correction_nm: float | None,
+    force_correction_uN: float | None,
 ) -> OliverPharrExperimentResult:
     """Fit a straight line to the early unloading fraction."""
 
@@ -312,6 +346,8 @@ def _fit_linear_fraction(
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
         )
     if not np.isfinite(fit_disp).all() or not np.isfinite(fit_force).all():
         return _failed_result(
@@ -326,6 +362,8 @@ def _fit_linear_fraction(
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
         )
 
     initial_slope = _estimate_slope(fit_disp, fit_force)
@@ -350,6 +388,8 @@ def _fit_linear_fraction(
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
         )
 
     slope = float(parameters[0])
@@ -367,6 +407,8 @@ def _fit_linear_fraction(
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
         )
     if np.isclose(slope, 0.0, atol=1e-12):
         return _failed_result(
@@ -381,6 +423,8 @@ def _fit_linear_fraction(
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
         )
 
     depth_intercept = float(-intercept / slope)
@@ -423,6 +467,8 @@ def _fit_linear_fraction(
         fit_point_count=len(fit_disp),
         used_smoothing=used_smoothing,
         smoothing=smoothing,
+        disp_correction_nm=disp_correction_nm,
+        force_correction_uN=force_correction_uN,
         stiffness_uN_per_nm=slope,
         r_squared=r_squared,
         linear_slope_uN_per_nm=slope,
@@ -446,6 +492,8 @@ def _fit_power_law_full(
     unloading_end_disp_nm: float | None,
     used_smoothing: bool,
     smoothing: Mapping[str, Any] | None,
+    disp_correction_nm: float | None,
+    force_correction_uN: float | None,
 ) -> OliverPharrExperimentResult:
     """Fit the full unloading branch with a power-law model."""
 
@@ -465,6 +513,8 @@ def _fit_power_law_full(
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
         )
     if not np.isfinite(fit_disp).all() or not np.isfinite(fit_force).all():
         return _failed_result(
@@ -479,6 +529,8 @@ def _fit_power_law_full(
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
         )
 
     try:
@@ -506,6 +558,8 @@ def _fit_power_law_full(
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
         )
     except (RuntimeError, ValueError):
         return _failed_result(
@@ -520,6 +574,8 @@ def _fit_power_law_full(
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
         )
 
     stiffness = _power_law_stiffness(
@@ -541,6 +597,8 @@ def _fit_power_law_full(
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
         )
     if np.isclose(stiffness, 0.0, atol=1e-12):
         return _failed_result(
@@ -555,6 +613,8 @@ def _fit_power_law_full(
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
+            disp_correction_nm=disp_correction_nm,
+            force_correction_uN=force_correction_uN,
         )
 
     r_squared = _r_squared(fit_force, fitted_window)
@@ -581,6 +641,8 @@ def _fit_power_law_full(
         fit_point_count=len(fit_disp),
         used_smoothing=used_smoothing,
         smoothing=smoothing,
+        disp_correction_nm=disp_correction_nm,
+        force_correction_uN=force_correction_uN,
         stiffness_uN_per_nm=stiffness,
         r_squared=r_squared,
         power_law_k=fitted_k,
@@ -714,6 +776,8 @@ def _failed_result(
     fit_point_count: int = 0,
     used_smoothing: bool,
     smoothing: Mapping[str, Any] | None,
+    disp_correction_nm: float | None,
+    force_correction_uN: float | None,
 ) -> OliverPharrExperimentResult:
     """Build a standardized unsuccessful analysis result."""
 
@@ -730,6 +794,8 @@ def _failed_result(
         fit_point_count=fit_point_count,
         used_smoothing=used_smoothing,
         smoothing=smoothing,
+        disp_correction_nm=disp_correction_nm,
+        force_correction_uN=force_correction_uN,
         stiffness_uN_per_nm=None,
         r_squared=None,
         x_fit=np.empty(0, dtype=np.float64),
@@ -778,7 +844,7 @@ def _attach_hardness(
             hardness_reason="missing_stiffness",
         )
 
-    hmax_nm = float(result.evaluation_disp_nm - onset_disp_nm)
+    hmax_nm = float(result.evaluation_disp_nm)
     if not np.isfinite(hmax_nm) or hmax_nm <= 0.0:
         return replace(
             result,
@@ -846,6 +912,18 @@ def _freeze_mapping(
     if mapping is None:
         return None
     return MappingProxyType(dict(mapping))
+
+
+def _apply_correction(
+    values: NDArray[np.float64],
+    *,
+    correction: float | None,
+) -> NDArray[np.float64]:
+    """Return a corrected copy of one signal."""
+
+    if correction is None:
+        return values.copy()
+    return np.asarray(values - correction, dtype=np.float64)
 
 
 def _linear_model(

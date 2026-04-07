@@ -379,16 +379,18 @@ def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
     assert result.reason is None
     assert result.fit_model == "linear_fraction"
     assert result.used_smoothing is False
+    assert result.disp_correction_nm == pytest.approx(20.0)
+    assert result.force_correction_uN is None
     assert result.evaluation_index == 100
     assert result.evaluation_force_uN == pytest.approx(100.0)
-    assert result.evaluation_disp_nm == pytest.approx(100.0)
+    assert result.evaluation_disp_nm == pytest.approx(80.0)
     assert result.unloading_start_index == 100
     assert result.unloading_end_index == 110
     assert result.fit_point_count == 11
     assert result.stiffness_uN_per_nm == pytest.approx(5.0, rel=1e-4)
     assert result.linear_slope_uN_per_nm == pytest.approx(5.0, rel=1e-4)
-    assert result.linear_intercept_uN == pytest.approx(-400.0, rel=1e-4)
-    assert result.linear_depth_intercept_nm == pytest.approx(80.0, rel=1e-4)
+    assert result.linear_intercept_uN == pytest.approx(-300.0, rel=1e-4)
+    assert result.linear_depth_intercept_nm == pytest.approx(60.0, rel=1e-4)
     assert result.r_squared == pytest.approx(1.0, abs=1e-6)
     assert result.hardness_success is True
     assert result.hardness_reason is None
@@ -403,6 +405,8 @@ def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
     )
     assert len(result.x_fit) == 200
     assert len(result.y_fit) == 200
+    assert result.x_fit[0] == pytest.approx(75.0)
+    assert result.x_fit[-1] == pytest.approx(80.0)
 
 
 def test_analyze_oliver_pharr_uses_smoothed_signals_for_peak_detection() -> (
@@ -512,6 +516,25 @@ def test_analyze_oliver_pharr_marks_missing_onset_for_hardness() -> None:
     assert result.reduced_modulus_uN_per_nm2 is None
 
 
+def test_analyze_oliver_pharr_applies_force_baseline_correction() -> None:
+    x, y = _make_linear_unloading_curve()
+    y = y + 3.0
+
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        unloading_fraction=0.25,
+        onset_disp_nm=20.0,
+        baseline_offset_uN=3.0,
+    )
+
+    assert result.success is True
+    assert result.force_correction_uN == pytest.approx(3.0)
+    assert result.evaluation_force_uN == pytest.approx(100.0)
+    assert result.y_fit[0] == pytest.approx(75.0)
+    assert result.linear_intercept_uN == pytest.approx(-300.0, rel=1e-4)
+
+
 def test_analyze_oliver_pharr_can_override_epsilon() -> None:
     x, y = _make_linear_unloading_curve()
 
@@ -575,13 +598,15 @@ def test_analyze_oliver_pharr_fits_full_power_law_with_fitted_hf() -> None:
 
     assert result.success is True
     assert result.fit_model == "power_law_full"
+    assert result.disp_correction_nm == pytest.approx(20.0)
     assert result.evaluation_index == 100
     assert result.unloading_end_index == len(x) - 1
     assert result.fit_point_count == len(x) - 100
     assert result.power_law_hf_mode == "fit"
     assert result.power_law_k == pytest.approx(expected_k, rel=5e-2)
     assert result.power_law_m == pytest.approx(1.5, rel=5e-2)
-    assert result.power_law_hf_nm == pytest.approx(40.0, abs=1.0)
+    assert result.power_law_hf_nm == pytest.approx(20.0, abs=1.0)
+    assert result.evaluation_disp_nm == pytest.approx(80.0)
     expected_stiffness = expected_k * 1.5 * np.power(60.0, 0.5)
     assert result.stiffness_uN_per_nm == pytest.approx(
         expected_stiffness, rel=5e-2
@@ -629,6 +654,27 @@ def test_analyze_op_power_law_uses_unloading_start_as_evaluation_point() -> (
     assert result.success is True
     assert result.evaluation_index == 100
     assert result.evaluation_disp_nm == pytest.approx(x[100])
+
+
+def test_analyze_oliver_pharr_power_law_stores_corrected_coordinates() -> None:
+    x, y, _ = _make_power_law_unloading_curve(unloading_end_nm=40.0)
+
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        fit_model="power_law_full",
+        unloading_start_index=100,
+        unloading_end_disp_nm=40.0,
+        onset_disp_nm=20.0,
+        power_law_hf_mode="fixed_end_disp",
+    )
+
+    assert result.success is True
+    assert result.disp_correction_nm == pytest.approx(20.0)
+    assert result.evaluation_disp_nm == pytest.approx(80.0)
+    assert result.power_law_hf_nm == pytest.approx(20.0)
+    assert result.x_fit[0] == pytest.approx(20.0)
+    assert result.x_fit[-1] == pytest.approx(80.0)
 
 
 def test_analyze_oliver_pharr_power_law_requires_end_disp_for_fixed_hf() -> (
