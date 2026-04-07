@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from nanodent.models import ExperimentPaths, SignalTable
+from nanodent.models import Experiment, ExperimentPaths, SignalTable
 from nanodent.study import Study
 
 EXPERIMENT_A = "experiment_a"
@@ -739,6 +739,37 @@ def test_analyze_oliver_pharr_auto_attaches_unloading_when_missing(
     assert experiment.unloading is not None
     assert experiment.unloading.success is True
     assert experiment.oliver_pharr is not None
+    assert experiment.oliver_pharr.unloading_start_index == (
+        experiment.unloading.start_index
+    )
+
+
+def test_analyze_oliver_pharr_uses_experiment_unloading_curve(
+    base_study,
+    monkeypatch,
+) -> None:
+    original = Experiment.unloading_curve
+    calls: list[tuple[str, str, str]] = []
+
+    def wrapped(
+        self: Experiment,
+        *,
+        x: str = "disp_nm",
+        y: str = "force_uN",
+    ) -> tuple[np.ndarray, np.ndarray]:
+        calls.append((self.stem, x, y))
+        return original(self, x=x, y=y)
+
+    monkeypatch.setattr(Experiment, "unloading_curve", wrapped)
+
+    analyzed = base_study.detect_unloading().analyze_oliver_pharr(
+        stems=EXPERIMENT_A
+    )
+    experiment = analyzed.experiments[0]
+
+    assert calls == [(EXPERIMENT_A, "disp_nm", "force_uN")]
+    assert experiment.oliver_pharr is not None
+    assert experiment.unloading is not None
     assert experiment.oliver_pharr.unloading_start_index == (
         experiment.unloading.start_index
     )

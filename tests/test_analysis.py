@@ -57,6 +57,14 @@ def _make_power_law_unloading_curve(
     )
 
 
+def _slice_unloading_branch(
+    disp: np.ndarray,
+    force: np.ndarray,
+    start_index: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    return disp[start_index:], force[start_index:]
+
+
 def _make_two_peak_signal() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     time = np.arange(0.0, 120.0, 1.0, dtype=np.float64)
     disp = np.linspace(0.0, 119.0, len(time), dtype=np.float64)
@@ -367,10 +375,12 @@ def test_detect_unloading_validates_inputs_and_method() -> None:
 
 def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
     x, y = _make_linear_unloading_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     result = analyze_oliver_pharr(
-        x,
-        y,
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
         unloading_fraction=0.25,
         onset_disp_nm=20.0,
     )
@@ -409,101 +419,105 @@ def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
     assert result.x_fit[-1] == pytest.approx(80.0)
 
 
-def test_analyze_oliver_pharr_uses_smoothed_signals_for_peak_detection() -> (
-    None
-):
+def test_analyze_oliver_pharr_records_smoothing_for_branch_fit() -> None:
     x, y = _make_spiky_peak_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
-    raw_result = analyze_oliver_pharr(x, y, unloading_fraction=0.25)
+    raw_result = analyze_oliver_pharr(
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
+        unloading_fraction=0.25,
+    )
     smoothed_result = analyze_oliver_pharr(
-        x,
-        y,
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
         unloading_fraction=0.25,
         smoothing={"window_length": 21, "polyorder": 2},
     )
 
-    assert raw_result.evaluation_index == 70
+    assert raw_result.evaluation_index == 100
     assert smoothed_result.success is True
     assert smoothed_result.used_smoothing is True
     assert dict(smoothed_result.smoothing or {}) == {
         "window_length": 21,
         "polyorder": 2,
     }
-    assert smoothed_result.evaluation_index == pytest.approx(100, abs=2)
+    assert smoothed_result.evaluation_index == 100
 
 
-def test_analyze_oliver_pharr_can_reuse_precomputed_unloading_start() -> None:
-    x, y = _make_spiky_peak_curve()
-
-    result = analyze_oliver_pharr(
-        x,
-        y,
-        unloading_fraction=0.25,
-        smoothing={"window_length": 21, "polyorder": 2},
-        unloading_start_index=70,
-    )
-
-    assert result.success is True
-    assert result.evaluation_index == 70
-    assert result.unloading_start_index == 70
-
-
-def test_analyze_oliver_pharr_validates_explicit_unloading_start() -> None:
+def test_analyze_oliver_pharr_validates_unloading_start_trace_index() -> None:
     x, y = _make_linear_unloading_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
-    with pytest.raises(ValueError, match="unloading_start_index"):
-        analyze_oliver_pharr(x, y, unloading_start_index=len(x))
+    with pytest.raises(ValueError, match="unloading_start_trace_index"):
+        analyze_oliver_pharr(
+            unloading_x,
+            unloading_y,
+            unloading_start_trace_index=-1,
+        )
 
 
 def test_analyze_oliver_pharr_rejects_unloading_fraction_for_power_law() -> (
     None
 ):
     x, y, _ = _make_power_law_unloading_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     with pytest.raises(ValueError, match="unloading_fraction"):
         analyze_oliver_pharr(
-            x,
-            y,
+            unloading_x,
+            unloading_y,
+            unloading_start_trace_index=100,
             fit_model="power_law_full",
             unloading_fraction=0.25,
-            unloading_start_index=100,
         )
 
 
 def test_analyze_oliver_pharr_rejects_invalid_unloading_fraction() -> None:
     x, y = _make_linear_unloading_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     with pytest.raises(ValueError, match="unloading_fraction"):
-        analyze_oliver_pharr(x, y, unloading_fraction=0.0)
+        analyze_oliver_pharr(unloading_x, unloading_y, unloading_fraction=0.0)
 
     with pytest.raises(ValueError, match="unloading_fraction"):
-        analyze_oliver_pharr(x, y, unloading_fraction=1.1)
+        analyze_oliver_pharr(unloading_x, unloading_y, unloading_fraction=1.1)
 
 
 def test_analyze_oliver_pharr_rejects_invalid_epsilon() -> None:
     x, y = _make_linear_unloading_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     with pytest.raises(ValueError, match="epsilon"):
-        analyze_oliver_pharr(x, y, epsilon=0.0)
+        analyze_oliver_pharr(unloading_x, unloading_y, epsilon=0.0)
 
 
 def test_analyze_oliver_pharr_rejects_invalid_power_law_hf_mode() -> None:
     x, y, _ = _make_power_law_unloading_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     with pytest.raises(ValueError, match="power_law_hf_mode"):
         analyze_oliver_pharr(
-            x,
-            y,
+            unloading_x,
+            unloading_y,
+            unloading_start_trace_index=100,
             fit_model="power_law_full",
-            unloading_start_index=100,
             power_law_hf_mode="invalid",
         )
 
 
 def test_analyze_oliver_pharr_marks_missing_onset_for_hardness() -> None:
     x, y = _make_linear_unloading_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
-    result = analyze_oliver_pharr(x, y, unloading_fraction=0.25)
+    result = analyze_oliver_pharr(
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
+        unloading_fraction=0.25,
+    )
 
     assert result.success is True
     assert result.hardness_success is False
@@ -519,10 +533,12 @@ def test_analyze_oliver_pharr_marks_missing_onset_for_hardness() -> None:
 def test_analyze_oliver_pharr_applies_force_baseline_correction() -> None:
     x, y = _make_linear_unloading_curve()
     y = y + 3.0
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     result = analyze_oliver_pharr(
-        x,
-        y,
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
         unloading_fraction=0.25,
         onset_disp_nm=20.0,
         baseline_offset_uN=3.0,
@@ -537,10 +553,12 @@ def test_analyze_oliver_pharr_applies_force_baseline_correction() -> None:
 
 def test_analyze_oliver_pharr_can_override_epsilon() -> None:
     x, y = _make_linear_unloading_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     result = analyze_oliver_pharr(
-        x,
-        y,
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
         unloading_fraction=0.25,
         onset_disp_nm=20.0,
         epsilon=0.5,
@@ -560,10 +578,12 @@ def test_analyze_oliver_pharr_can_override_epsilon() -> None:
 
 def test_analyze_oliver_pharr_marks_invalid_onset_corrected_hmax() -> None:
     x, y = _make_linear_unloading_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     result = analyze_oliver_pharr(
-        x,
-        y,
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
         unloading_fraction=0.25,
         onset_disp_nm=100.0,
     )
@@ -576,8 +596,8 @@ def test_analyze_oliver_pharr_marks_invalid_onset_corrected_hmax() -> None:
 
 
 def test_analyze_oliver_pharr_marks_missing_unloading_branch() -> None:
-    x = np.array([0.0, 1.0, 2.0], dtype=np.float64)
-    y = np.array([0.0, 1.0, 2.0], dtype=np.float64)
+    x = np.array([2.0], dtype=np.float64)
+    y = np.array([1.0], dtype=np.float64)
 
     result = analyze_oliver_pharr(x, y)
 
@@ -587,12 +607,13 @@ def test_analyze_oliver_pharr_marks_missing_unloading_branch() -> None:
 
 def test_analyze_oliver_pharr_fits_full_power_law_with_fitted_hf() -> None:
     x, y, expected_k = _make_power_law_unloading_curve(unloading_end_nm=50.0)
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     result = analyze_oliver_pharr(
-        x,
-        y,
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
         fit_model="power_law_full",
-        unloading_start_index=100,
         onset_disp_nm=20.0,
     )
 
@@ -619,12 +640,13 @@ def test_analyze_oliver_pharr_fits_full_power_law_with_fixed_end_disp() -> (
     None
 ):
     x, y, expected_k = _make_power_law_unloading_curve(unloading_end_nm=40.0)
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     result = analyze_oliver_pharr(
-        x,
-        y,
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
         fit_model="power_law_full",
-        unloading_start_index=100,
         unloading_end_disp_nm=40.0,
         power_law_hf_mode="fixed_end_disp",
     )
@@ -641,12 +663,13 @@ def test_analyze_op_power_law_uses_unloading_start_as_evaluation_point() -> (
 ):
     x, y, _ = _make_power_law_unloading_curve(unloading_end_nm=40.0)
     y[70] += 10.0
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     result = analyze_oliver_pharr(
-        x,
-        y,
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
         fit_model="power_law_full",
-        unloading_start_index=100,
         unloading_end_disp_nm=40.0,
         power_law_hf_mode="fixed_end_disp",
     )
@@ -656,14 +679,34 @@ def test_analyze_op_power_law_uses_unloading_start_as_evaluation_point() -> (
     assert result.evaluation_disp_nm == pytest.approx(x[100])
 
 
-def test_analyze_oliver_pharr_power_law_stores_corrected_coordinates() -> None:
-    x, y, _ = _make_power_law_unloading_curve(unloading_end_nm=40.0)
+def test_analyze_oliver_pharr_keeps_trace_indices() -> None:
+    x, y = _make_linear_unloading_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     result = analyze_oliver_pharr(
-        x,
-        y,
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
+        unloading_fraction=0.25,
+    )
+
+    assert result.success is True
+    assert result.evaluation_index == 100
+    assert result.unloading_start_index == 100
+    assert result.unloading_end_index == 110
+    assert result.evaluation_disp_nm == pytest.approx(x[100])
+    assert result.evaluation_force_uN == pytest.approx(y[100])
+
+
+def test_analyze_oliver_pharr_power_law_stores_corrected_coordinates() -> None:
+    x, y, _ = _make_power_law_unloading_curve(unloading_end_nm=40.0)
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
+
+    result = analyze_oliver_pharr(
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
         fit_model="power_law_full",
-        unloading_start_index=100,
         unloading_end_disp_nm=40.0,
         onset_disp_nm=20.0,
         power_law_hf_mode="fixed_end_disp",
@@ -681,12 +724,13 @@ def test_analyze_oliver_pharr_power_law_requires_end_disp_for_fixed_hf() -> (
     None
 ):
     x, y, _ = _make_power_law_unloading_curve(unloading_end_nm=40.0)
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     result = analyze_oliver_pharr(
-        x,
-        y,
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
         fit_model="power_law_full",
-        unloading_start_index=100,
         power_law_hf_mode="fixed_end_disp",
     )
 
@@ -695,8 +739,8 @@ def test_analyze_oliver_pharr_power_law_requires_end_disp_for_fixed_hf() -> (
 
 
 def test_analyze_oliver_pharr_marks_too_few_unloading_points() -> None:
-    x = np.array([0.0, 1.0, 2.0, 1.5, 1.0], dtype=np.float64)
-    y = np.array([0.0, 1.0, 2.0, 1.0, 0.0], dtype=np.float64)
+    x = np.array([2.0, 1.8, 1.6, 1.4], dtype=np.float64)
+    y = np.array([2.0, 1.5, 1.0, 0.5], dtype=np.float64)
 
     result = analyze_oliver_pharr(x, y, unloading_fraction=1.0)
 
@@ -705,8 +749,8 @@ def test_analyze_oliver_pharr_marks_too_few_unloading_points() -> None:
 
 
 def test_analyze_oliver_pharr_marks_zero_stiffness() -> None:
-    x = np.array([0.0, 1.0, 2.0, 1.9, 1.8, 1.7, 1.6], dtype=np.float64)
-    y = np.array([0.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0], dtype=np.float64)
+    x = np.array([2.0, 1.9, 1.8, 1.7, 1.6, 1.5], dtype=np.float64)
+    y = np.full_like(x, 2.0)
 
     result = analyze_oliver_pharr(x, y, unloading_fraction=1.0)
 

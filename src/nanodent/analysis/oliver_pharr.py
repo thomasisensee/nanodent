@@ -101,14 +101,13 @@ def analyze_oliver_pharr(
     disp_nm: ArrayLike,
     force_uN: ArrayLike,
     *,
+    unloading_start_trace_index: int = 0,
     fit_model: Literal["linear_fraction", "power_law_full"] = (
         _LINEAR_FIT_MODEL
     ),
     unloading_fraction: float | None = None,
     smoothing: Mapping[str, Any] | None = None,
     fit_num_points: int = 200,
-    use_force_peak: bool = True,
-    unloading_start_index: int | None = None,
     unloading_end_disp_nm: float | None = None,
     power_law_hf_mode: Literal["fit", "fixed_end_disp"] = (_POWER_LAW_HF_FIT),
     onset_disp_nm: float | None = None,
@@ -119,9 +118,13 @@ def analyze_oliver_pharr(
     """Fit one supported Oliver-Pharr model to an unloading branch.
 
     Args:
-        disp_nm: Displacement values from the test section in acquisition
+        disp_nm: Displacement values from the unloading branch in
+            acquisition order.
+        force_uN: Force values from the unloading branch in acquisition
             order.
-        force_uN: Force values from the test section in acquisition order.
+        unloading_start_trace_index: Absolute trace index of the first
+            unloading sample. This keeps result indices aligned with the
+            original experiment trace.
         fit_model: Fitting strategy. `linear_fraction` fits a straight line
             to the early unloading branch. `power_law_full` fits
             `f = k * (h - hf)^m` to the full unloading branch.
@@ -129,14 +132,9 @@ def analyze_oliver_pharr(
             for `linear_fraction`. When omitted, defaults to `0.2`.
         smoothing: Optional keyword arguments forwarded to `nanodent.savgol`.
             When provided, the same filter is applied to displacement and
-            force before selecting the fit window and fitting.
+            force before fitting.
         fit_num_points: Number of points used to evaluate the dense fitted
             curve for plotting.
-        use_force_peak: When `unloading_start_index` is not provided, choose
-            the evaluation sample from the maximum force (`True`) or maximum
-            displacement (`False`).
-        unloading_start_index: Optional index of the unloading-start sample.
-            When provided, this overrides internal start selection.
         unloading_end_disp_nm: Optional unloading-end displacement used by the
             power-law mode when `power_law_hf_mode="fixed_end_disp"`.
         power_law_hf_mode: Whether the power-law model fits `hf` or fixes it
@@ -153,6 +151,11 @@ def analyze_oliver_pharr(
         incomplete unloading segments are returned as unsuccessful results
         instead of raising, except for malformed input arguments.
     """
+
+    if unloading_start_trace_index < 0:
+        raise ValueError(
+            "unloading_start_trace_index must refer to a valid sample."
+        )
 
     disp_array = np.asarray(disp_nm, dtype=np.float64)
     force_array = np.asarray(force_uN, dtype=np.float64)
@@ -221,29 +224,28 @@ def analyze_oliver_pharr(
         - (0.0 if disp_correction is None else disp_correction)
     )
 
-    evaluation_index = _evaluation_index(
-        active_disp=corrected_disp,
-        active_force=corrected_force,
-        use_force_peak=use_force_peak,
-        unloading_start_index=unloading_start_index,
-    )
-    evaluation_force = float(corrected_force[evaluation_index])
-    evaluation_disp = float(corrected_disp[evaluation_index])
-    if evaluation_index >= len(corrected_force) - 1:
-        return _failed_result(
+    evaluation_force = float(corrected_force[0])
+    evaluation_disp = float(corrected_disp[0])
+    if len(corrected_force) < 2:
+        result = _failed_result(
             stem=stem,
             reason="no_unloading_branch",
             fit_model=fit_model,
-            evaluation_index=evaluation_index,
+            evaluation_index=unloading_start_trace_index,
             evaluation_force_uN=evaluation_force,
             evaluation_disp_nm=evaluation_disp,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=evaluation_index,
+            unloading_start_index=unloading_start_trace_index,
+            unloading_end_index=unloading_start_trace_index,
             fit_point_count=1,
             used_smoothing=frozen_smoothing is not None,
             smoothing=frozen_smoothing,
             disp_correction_nm=disp_correction,
             force_correction_uN=force_correction,
+        )
+        return _attach_hardness(
+            result,
+            onset_disp_nm=onset_disp_nm,
+            epsilon=epsilon,
         )
 
     if fit_model == _LINEAR_FIT_MODEL:
@@ -251,7 +253,8 @@ def analyze_oliver_pharr(
             active_disp=corrected_disp,
             active_force=corrected_force,
             stem=stem,
-            evaluation_index=evaluation_index,
+            evaluation_index=0,
+            trace_index_offset=unloading_start_trace_index,
             evaluation_force_uN=evaluation_force,
             evaluation_disp_nm=evaluation_disp,
             unloading_fraction=resolved_unloading_fraction,
@@ -266,7 +269,8 @@ def analyze_oliver_pharr(
             active_disp=corrected_disp,
             active_force=corrected_force,
             stem=stem,
-            evaluation_index=evaluation_index,
+            evaluation_index=0,
+            trace_index_offset=unloading_start_trace_index,
             evaluation_force_uN=evaluation_force,
             evaluation_disp_nm=evaluation_disp,
             fit_num_points=fit_num_points,
@@ -284,34 +288,13 @@ def analyze_oliver_pharr(
     )
 
 
-def _evaluation_index(
-    *,
-    active_disp: NDArray[np.float64],
-    active_force: NDArray[np.float64],
-    use_force_peak: bool,
-    unloading_start_index: int | None,
-) -> int:
-    """Return the canonical evaluation/start sample."""
-
-    if unloading_start_index is not None:
-        index = int(unloading_start_index)
-        if index < 0 or index >= len(active_force):
-            raise ValueError(
-                "unloading_start_index must refer to a valid sample."
-            )
-        return index
-
-    peak_force_index = int(np.argmax(active_force))
-    peak_disp_index = int(np.argmax(active_disp))
-    return peak_force_index if use_force_peak else peak_disp_index
-
-
 def _fit_linear_fraction(
     *,
     active_disp: NDArray[np.float64],
     active_force: NDArray[np.float64],
     stem: str,
     evaluation_index: int,
+    trace_index_offset: int,
     evaluation_force_uN: float,
     evaluation_disp_nm: float,
     unloading_fraction: float,
@@ -323,26 +306,30 @@ def _fit_linear_fraction(
 ) -> OliverPharrExperimentResult:
     """Fit a straight line to the early unloading fraction."""
 
+    absolute_evaluation_index = trace_index_offset + evaluation_index
     unloading_length = len(active_force) - evaluation_index
     fit_point_count = max(
         int(np.ceil(unloading_length * unloading_fraction)), 1
     )
-    unloading_end_index = min(
+    local_unloading_end_index = min(
         evaluation_index + fit_point_count - 1,
         len(active_force) - 1,
     )
-    fit_disp = active_disp[evaluation_index : unloading_end_index + 1]
-    fit_force = active_force[evaluation_index : unloading_end_index + 1]
+    absolute_unloading_end_index = (
+        trace_index_offset + local_unloading_end_index
+    )
+    fit_disp = active_disp[evaluation_index : local_unloading_end_index + 1]
+    fit_force = active_force[evaluation_index : local_unloading_end_index + 1]
     if len(fit_disp) < 5:
         return _failed_result(
             stem=stem,
             reason="too_few_unloading_points",
             fit_model=_LINEAR_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -354,11 +341,11 @@ def _fit_linear_fraction(
             stem=stem,
             reason="fit_failed",
             fit_model=_LINEAR_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -380,11 +367,11 @@ def _fit_linear_fraction(
             stem=stem,
             reason="fit_failed",
             fit_model=_LINEAR_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -399,11 +386,11 @@ def _fit_linear_fraction(
             stem=stem,
             reason="fit_failed",
             fit_model=_LINEAR_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -415,11 +402,11 @@ def _fit_linear_fraction(
             stem=stem,
             reason="zero_stiffness",
             fit_model=_LINEAR_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -433,11 +420,11 @@ def _fit_linear_fraction(
             stem=stem,
             reason="fit_failed",
             fit_model=_LINEAR_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -459,11 +446,11 @@ def _fit_linear_fraction(
         success=True,
         reason=None,
         fit_model=_LINEAR_FIT_MODEL,
-        evaluation_index=evaluation_index,
+        evaluation_index=absolute_evaluation_index,
         evaluation_force_uN=evaluation_force_uN,
         evaluation_disp_nm=evaluation_disp_nm,
-        unloading_start_index=evaluation_index,
-        unloading_end_index=unloading_end_index,
+        unloading_start_index=absolute_evaluation_index,
+        unloading_end_index=absolute_unloading_end_index,
         fit_point_count=len(fit_disp),
         used_smoothing=used_smoothing,
         smoothing=smoothing,
@@ -485,6 +472,7 @@ def _fit_power_law_full(
     active_force: NDArray[np.float64],
     stem: str,
     evaluation_index: int,
+    trace_index_offset: int,
     evaluation_force_uN: float,
     evaluation_disp_nm: float,
     fit_num_points: int,
@@ -497,7 +485,11 @@ def _fit_power_law_full(
 ) -> OliverPharrExperimentResult:
     """Fit the full unloading branch with a power-law model."""
 
-    unloading_end_index = len(active_force) - 1
+    absolute_evaluation_index = trace_index_offset + evaluation_index
+    local_unloading_end_index = len(active_force) - 1
+    absolute_unloading_end_index = (
+        trace_index_offset + local_unloading_end_index
+    )
     fit_disp = active_disp[evaluation_index:]
     fit_force = active_force[evaluation_index:]
     if len(fit_disp) < 5:
@@ -505,11 +497,11 @@ def _fit_power_law_full(
             stem=stem,
             reason="too_few_unloading_points",
             fit_model=_POWER_LAW_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -521,11 +513,11 @@ def _fit_power_law_full(
             stem=stem,
             reason="fit_failed",
             fit_model=_POWER_LAW_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -550,11 +542,11 @@ def _fit_power_law_full(
             stem=stem,
             reason=str(exc),
             fit_model=_POWER_LAW_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -566,11 +558,11 @@ def _fit_power_law_full(
             stem=stem,
             reason="fit_failed",
             fit_model=_POWER_LAW_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -589,11 +581,11 @@ def _fit_power_law_full(
             stem=stem,
             reason="fit_failed",
             fit_model=_POWER_LAW_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -605,11 +597,11 @@ def _fit_power_law_full(
             stem=stem,
             reason="zero_stiffness",
             fit_model=_POWER_LAW_FIT_MODEL,
-            evaluation_index=evaluation_index,
+            evaluation_index=absolute_evaluation_index,
             evaluation_force_uN=evaluation_force_uN,
             evaluation_disp_nm=evaluation_disp_nm,
-            unloading_start_index=evaluation_index,
-            unloading_end_index=unloading_end_index,
+            unloading_start_index=absolute_evaluation_index,
+            unloading_end_index=absolute_unloading_end_index,
             fit_point_count=len(fit_disp),
             used_smoothing=used_smoothing,
             smoothing=smoothing,
@@ -633,11 +625,11 @@ def _fit_power_law_full(
         success=True,
         reason=None,
         fit_model=_POWER_LAW_FIT_MODEL,
-        evaluation_index=evaluation_index,
+        evaluation_index=absolute_evaluation_index,
         evaluation_force_uN=evaluation_force_uN,
         evaluation_disp_nm=evaluation_disp_nm,
-        unloading_start_index=evaluation_index,
-        unloading_end_index=unloading_end_index,
+        unloading_start_index=absolute_evaluation_index,
+        unloading_end_index=absolute_unloading_end_index,
         fit_point_count=len(fit_disp),
         used_smoothing=used_smoothing,
         smoothing=smoothing,

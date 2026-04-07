@@ -13,9 +13,7 @@ from typing import Any
 from nanodent.analysis.force_peaks import (
     detect_force_peaks as _detect_force_peaks,
 )
-from nanodent.analysis.oliver_pharr import (
-    analyze_oliver_pharr as _analyze_oliver_pharr,
-)
+from nanodent.analysis.oliver_pharr import analyze_oliver_pharr
 from nanodent.analysis.onset import detect_onset as _detect_onset
 from nanodent.analysis.quality import classify_quality as _classify_quality
 from nanodent.analysis.unloading import (
@@ -274,7 +272,6 @@ class Study:
         unloading_fraction: float | None = None,
         smoothing: Mapping[str, Any] | None = None,
         fit_num_points: int = 2,
-        use_force_peak: bool = True,
         power_law_hf_mode: str = "fit",
         epsilon: float = 0.75,
         include_disabled: bool = False,
@@ -311,17 +308,15 @@ class Study:
                 unloading = updated.unloading
             experiments.append(
                 updated.with_oliver_pharr(
-                    _analyze_oliver_pharr(
-                        updated.trace["disp_nm"],
-                        updated.trace["force_uN"],
+                    analyze_oliver_pharr(
+                        *updated.unloading_curve(x="disp_nm", y="force_uN"),
+                        unloading_start_trace_index=0
+                        if unloading is None
+                        else unloading.start_index,
                         fit_model=fit_model,
                         unloading_fraction=unloading_fraction,
                         smoothing=smoothing,
                         fit_num_points=fit_num_points,
-                        use_force_peak=use_force_peak,
-                        unloading_start_index=None
-                        if unloading is None
-                        else unloading.start_index,
                         unloading_end_disp_nm=None
                         if unloading is None
                         else unloading.end_disp_nm,

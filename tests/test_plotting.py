@@ -74,9 +74,9 @@ def _make_experiment_with_fit(
     )
     experiment = experiment.with_oliver_pharr(
         analyze_oliver_pharr(
-            disp,
-            force,
-            unloading_start_index=100,
+            disp[100:],
+            force[100:],
+            unloading_start_trace_index=100,
             fit_model=fit_model,
             unloading_fraction=0.25
             if fit_model == "linear_fraction"
