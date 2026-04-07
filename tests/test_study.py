@@ -14,6 +14,20 @@ EXPERIMENT_C = "experiment_c"
 EXPERIMENT_D = "experiment_d"
 
 
+def _mean_timestamp(*timestamps: datetime) -> datetime:
+    origin = timestamps[0]
+    return origin + timedelta(
+        seconds=float(
+            np.mean(
+                [
+                    (timestamp - origin).total_seconds()
+                    for timestamp in timestamps
+                ]
+            )
+        )
+    )
+
+
 def test_group_by_time_gap_creates_two_default_groups(base_study) -> None:
     groups = base_study.group_by_time_gap()
 
@@ -837,6 +851,147 @@ def test_scalar_series_respects_enabled_filter(base_study) -> None:
 def test_scalar_series_rejects_unknown_metrics(base_study) -> None:
     with pytest.raises(ValueError, match="Unknown scalar metric"):
         base_study.scalar_series("not_a_metric")
+
+
+def test_group_scalar_series_returns_grouped_rows(base_study) -> None:
+    analyzed = (
+        base_study.detect_onset().detect_force_peaks().analyze_oliver_pharr()
+    )
+    groups = analyzed.group_by_time_gap()
+    expected_rows = []
+    for group in groups:
+        resolved = analyzed.resolve_group(group)
+        values = np.asarray(
+            [
+                experiment.oliver_pharr.hardness_uN_per_nm2
+                for experiment in resolved
+                if experiment.oliver_pharr is not None
+                and experiment.oliver_pharr.hardness_uN_per_nm2 is not None
+            ],
+            dtype=np.float64,
+        )
+        if len(values) == 0:
+            continue
+        valid_experiments = [
+            experiment
+            for experiment in resolved
+            if experiment.oliver_pharr is not None
+            and experiment.oliver_pharr.hardness_uN_per_nm2 is not None
+        ]
+        expected_rows.append(
+            {
+                "timestamp": _mean_timestamp(
+                    *[experiment.timestamp for experiment in valid_experiments]
+                ),
+                "group_index": group.index,
+                "stems": tuple(experiment.stem for experiment in resolved),
+                "value": float(np.mean(values)),
+                "std": float(np.std(values, ddof=0)),
+                "count": len(values),
+            }
+        )
+
+    rows = analyzed.group_scalar_series("hardness")
+
+    assert rows == expected_rows
+
+
+def test_group_scalar_series_can_use_explicit_groups(base_study) -> None:
+    analyzed = base_study.detect_onset()
+    group = analyzed.group_by_time_gap()[0]
+
+    rows = analyzed.group_scalar_series("onset_time", groups=[group])
+
+    resolved = analyzed.resolve_group(group)
+    expected_values = np.asarray(
+        [experiment.onset.onset_time_s for experiment in resolved],
+        dtype=np.float64,
+    )
+    assert rows == [
+        {
+            "timestamp": _mean_timestamp(
+                *[experiment.timestamp for experiment in resolved]
+            ),
+            "group_index": group.index,
+            "stems": group.stems,
+            "value": float(np.mean(expected_values)),
+            "std": float(np.std(expected_values, ddof=0)),
+            "count": len(expected_values),
+        }
+    ]
+
+
+def test_group_scalar_series_uses_available_values_within_group(
+    base_study,
+) -> None:
+    analyzed = (
+        base_study.detect_onset().detect_force_peaks().analyze_oliver_pharr()
+    )
+    first, second, third, fourth = analyzed.experiments
+    partial = Study(
+        experiments=(
+            first,
+            second,
+            replace(third, oliver_pharr=None),
+            fourth,
+        )
+    )
+    rows = partial.group_scalar_series("hardness")
+
+    assert rows[0]["stems"] == (EXPERIMENT_C, EXPERIMENT_D)
+    assert rows[0]["count"] == 1
+    assert rows[0]["timestamp"] == fourth.timestamp
+    assert rows[0]["value"] == pytest.approx(
+        fourth.oliver_pharr.hardness_uN_per_nm2
+    )
+    assert rows[0]["std"] == pytest.approx(0.0)
+
+
+def test_group_scalar_series_can_keep_empty_groups(base_study) -> None:
+    groups = base_study.group_by_time_gap()
+
+    rows = base_study.group_scalar_series("hardness", drop_missing=False)
+
+    assert len(rows) == len(groups)
+    assert rows[0] == {
+        "timestamp": _mean_timestamp(
+            base_study.experiments[0].timestamp,
+            base_study.experiments[1].timestamp,
+        ),
+        "group_index": groups[0].index,
+        "stems": groups[0].stems,
+        "value": None,
+        "std": None,
+        "count": 0,
+    }
+
+
+def test_group_scalar_series_respects_enabled_filter(base_study) -> None:
+    study = base_study.disable_experiments(EXPERIMENT_B).detect_onset(
+        include_disabled=True
+    )
+    groups = study.group_by_time_gap(include_disabled=True)
+
+    enabled_rows = study.group_scalar_series("onset_disp")
+    all_rows = study.group_scalar_series(
+        "onset_disp",
+        groups=groups,
+        include_disabled=True,
+    )
+
+    assert [row["stems"] for row in enabled_rows] == [
+        (EXPERIMENT_A,),
+        (EXPERIMENT_C, EXPERIMENT_D),
+    ]
+    assert [row["stems"] for row in all_rows] == [
+        (EXPERIMENT_A, EXPERIMENT_B),
+        (EXPERIMENT_C, EXPERIMENT_D),
+    ]
+
+
+def test_group_scalar_series_rejects_unknown_metrics(base_study) -> None:
+    with pytest.raises(ValueError, match="Unknown scalar metric"):
+        base_study.group_scalar_series("not_a_metric")
 
 
 def test_save_and_load_session_restores_results(

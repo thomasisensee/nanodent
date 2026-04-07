@@ -10,6 +10,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+import numpy as np
+
 from nanodent.analysis.force_peaks import (
     detect_force_peaks as _detect_force_peaks,
 )
@@ -595,6 +597,81 @@ class Study:
             )
         return rows
 
+    def group_scalar_series(
+        self,
+        metric: str,
+        *,
+        groups: Sequence[ExperimentGroup] | None = None,
+        max_gap: timedelta = timedelta(minutes=30),
+        include_disabled: bool = False,
+        drop_missing: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Return one aggregated scalar row per resolved experiment group."""
+
+        getter = _scalar_metric_getter(metric)
+        resolved_groups = (
+            self.group_by_time_gap(
+                max_gap=max_gap,
+                include_disabled=include_disabled,
+            )
+            if groups is None
+            else list(groups)
+        )
+
+        rows: list[dict[str, Any]] = []
+        for group in resolved_groups:
+            experiments = self.resolve_group(
+                group,
+                include_disabled=include_disabled,
+            )
+            if not experiments:
+                continue
+
+            valid_experiments = [
+                experiment
+                for experiment in experiments
+                if getter(experiment) is not None
+            ]
+            if not valid_experiments:
+                if drop_missing:
+                    continue
+                rows.append(
+                    {
+                        "timestamp": _average_timestamps(
+                            experiment.timestamp for experiment in experiments
+                        ),
+                        "group_index": group.index,
+                        "stems": tuple(
+                            experiment.stem for experiment in experiments
+                        ),
+                        "value": None,
+                        "std": None,
+                        "count": 0,
+                    }
+                )
+                continue
+
+            values = np.asarray(
+                [getter(experiment) for experiment in valid_experiments],
+                dtype=np.float64,
+            )
+            rows.append(
+                {
+                    "timestamp": _average_timestamps(
+                        experiment.timestamp
+                        for experiment in valid_experiments
+                    ),
+                    "group_index": group.index,
+                    "stems": tuple(
+                        experiment.stem for experiment in experiments
+                    ),
+                    "value": float(np.mean(values)),
+                    "std": float(np.std(values, ddof=0)),
+                    "count": len(valid_experiments),
+                }
+            )
+        return rows
+
     def save_session(self, path: str | Path) -> Path:
         """Persist experiment flags and attached analysis results."""
 
@@ -928,6 +1005,22 @@ def _scalar_metric_getter(metric: str) -> Any:
             f"{', '.join(sorted(registry))}."
         )
     return registry[metric]
+
+
+def _average_timestamps(
+    timestamps: Iterable[datetime],
+) -> datetime:
+    """Return the arithmetic mean of one non-empty timestamp iterable."""
+
+    timestamp_list = list(timestamps)
+    if not timestamp_list:
+        raise ValueError("Cannot average an empty timestamp sequence.")
+    origin = timestamp_list[0]
+    offsets = np.asarray(
+        [(timestamp - origin).total_seconds() for timestamp in timestamp_list],
+        dtype=np.float64,
+    )
+    return origin + timedelta(seconds=float(np.mean(offsets)))
 
 
 def _package_version() -> str:
