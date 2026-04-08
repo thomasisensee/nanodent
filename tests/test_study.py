@@ -5,13 +5,26 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from nanodent.models import Experiment, ExperimentPaths, SignalTable
+from nanodent.models import (
+    Experiment,
+    ExperimentPaths,
+    SignalTable,
+    TipAreaFunction,
+)
 from nanodent.study import Study
 
 EXPERIMENT_A = "experiment_a"
 EXPERIMENT_B = "experiment_b"
 EXPERIMENT_C = "experiment_c"
 EXPERIMENT_D = "experiment_d"
+PARSED_TIP_AREA_FUNCTION = TipAreaFunction(
+    c0=24.5,
+    c1=7749.44,
+    c2=229988.0,
+    c3=-2.17869e6,
+    c4=2.49969e6,
+    c5=0.0,
+)
 
 
 def _mean_timestamp(*timestamps: datetime) -> datetime:
@@ -215,6 +228,25 @@ def test_manual_enable_and_disable_return_new_studies(base_study) -> None:
     assert restored.experiments[0].disabled_reason is None
 
 
+def test_loaded_experiments_parse_tip_area_function(base_study) -> None:
+    assert all(
+        experiment.parsed_tip_area_function == PARSED_TIP_AREA_FUNCTION
+        for experiment in base_study.experiments
+    )
+    assert all(
+        experiment.tip_area_function is None
+        for experiment in base_study.experiments
+    )
+
+
+def test_study_methods_preserve_study_tip_area_function(base_study) -> None:
+    study = base_study.with_tip_area_function(TipAreaFunction(c0=31.0))
+
+    updated = study.disable_experiments(EXPERIMENT_A).detect_onset()
+
+    assert updated.tip_area_function == TipAreaFunction(c0=31.0)
+
+
 def test_analyze_oliver_pharr_skips_disabled_experiments_by_default(
     base_study,
 ) -> None:
@@ -280,6 +312,80 @@ def test_analyze_oliver_pharr_attaches_hardness_after_onset_detection(
             by_stem[EXPERIMENT_A].oliver_pharr.reduced_modulus_uN_per_nm2
             is None
         )
+
+
+def test_analyze_oliver_pharr_uses_parsed_tip_area_function(
+    base_study,
+) -> None:
+    analyzed = base_study.detect_onset().analyze_oliver_pharr(
+        stems=EXPERIMENT_A
+    )
+    experiment = analyzed.experiments[0]
+    result = experiment.oliver_pharr
+
+    assert result is not None
+    assert result.tip_area_function == PARSED_TIP_AREA_FUNCTION
+    assert result.contact_depth_nm is not None
+    assert result.contact_area_nm2 == pytest.approx(
+        PARSED_TIP_AREA_FUNCTION.evaluate(result.contact_depth_nm)
+    )
+
+
+def test_analyze_oliver_pharr_uses_study_tip_area_function_fallback(
+    base_study,
+) -> None:
+    experiment = replace(
+        base_study.experiments[0],
+        parsed_tip_area_function=None,
+        tip_area_function=None,
+    )
+    study_tip_area_function = TipAreaFunction(c0=30.0, c1=100.0)
+    study = Study(
+        experiments=(experiment,),
+        tip_area_function=study_tip_area_function,
+    ).detect_onset()
+
+    analyzed = study.analyze_oliver_pharr()
+    result = analyzed.experiments[0].oliver_pharr
+
+    assert result is not None
+    assert result.tip_area_function == study_tip_area_function
+    assert result.contact_depth_nm is not None
+    assert result.contact_area_nm2 == pytest.approx(
+        study_tip_area_function.evaluate(result.contact_depth_nm)
+    )
+
+
+def test_analyze_oliver_pharr_experiment_tip_area_function_overrides_study(
+    base_study,
+) -> None:
+    experiment_tip_area_function = TipAreaFunction(
+        c0=25.0, c1=7600, c2=210000, c3=-2.26e6, c4=2.4e6
+    )
+    study_tip_area_function = TipAreaFunction(
+        c0=24.5, c1=7650, c2=220000, c3=-2.2e6, c4=2.3e6
+    )
+    experiment = replace(
+        base_study.experiments[0],
+        parsed_tip_area_function=None,
+    ).with_tip_area_function(experiment_tip_area_function)
+    study = (
+        Study(
+            experiments=(experiment,),
+            tip_area_function=study_tip_area_function,
+        )
+        .detect_onset()
+        .analyze_oliver_pharr()
+    )
+
+    result = study.experiments[0].oliver_pharr
+
+    assert result is not None
+    assert result.tip_area_function == experiment_tip_area_function
+    assert result.contact_depth_nm is not None
+    assert result.contact_area_nm2 == pytest.approx(
+        experiment_tip_area_function.evaluate(result.contact_depth_nm)
+    )
 
 
 def test_analyze_oliver_pharr_uses_dense_fit_curve_by_default(
@@ -1034,13 +1140,16 @@ def test_group_scalar_series_uses_available_values_within_group(
     )
     rows = partial.group_scalar_series("hardness")
 
-    assert rows[0]["stems"] == (EXPERIMENT_C, EXPERIMENT_D)
-    assert rows[0]["count"] == 1
-    assert rows[0]["timestamp"] == fourth.timestamp
-    assert rows[0]["value"] == pytest.approx(
+    row = next(
+        row for row in rows if row["stems"] == (EXPERIMENT_C, EXPERIMENT_D)
+    )
+
+    assert row["count"] == 1
+    assert row["timestamp"] == fourth.timestamp
+    assert row["value"] == pytest.approx(
         fourth.oliver_pharr.hardness_uN_per_nm2
     )
-    assert rows[0]["std"] == pytest.approx(0.0)
+    assert row["std"] == pytest.approx(0.0)
 
 
 def test_group_scalar_series_pop_in_load_uses_available_values_within_group(
@@ -1165,8 +1274,18 @@ def test_save_and_load_session_restores_results(
     base_study, tmp_path: Path
 ) -> None:
     session_path = tmp_path / "study-session.pkl"
+    experiment_tip_area_function = TipAreaFunction(c0=40.0, c1=5.0)
+    study_tip_area_function = TipAreaFunction(c0=32.0)
+    first, *rest = base_study.experiments
     saved = (
-        base_study.disable_experiments(EXPERIMENT_A, reason="manual")
+        Study(
+            experiments=(
+                first.with_tip_area_function(experiment_tip_area_function),
+                *rest,
+            ),
+            tip_area_function=study_tip_area_function,
+        )
+        .disable_experiments(EXPERIMENT_A, reason="manual")
         .detect_onset(
             mode="absolute",
             baseline_start_index=0,
@@ -1187,8 +1306,12 @@ def test_save_and_load_session_restores_results(
 
     assert saved_path == session_path
     assert session_path.exists()
+    assert restored.tip_area_function == study_tip_area_function
     assert by_stem[EXPERIMENT_A].enabled is False
     assert by_stem[EXPERIMENT_A].disabled_reason == "manual"
+    assert (
+        by_stem[EXPERIMENT_A].tip_area_function == experiment_tip_area_function
+    )
     assert by_stem[EXPERIMENT_A].onset is not None
     assert dict(by_stem[EXPERIMENT_A].onset.smoothing or {}) == {
         "window_length": 5,
@@ -1230,19 +1353,60 @@ def test_load_session_overwrite_applies_saved_results(
     base_study, tmp_path: Path
 ) -> None:
     session_path = tmp_path / "study-session.pkl"
-    saved = base_study.detect_onset(
+    saved = base_study.with_tip_area_function(
+        TipAreaFunction(c0=28.0)
+    ).detect_onset(
         baseline_points=7,
         include_disabled=True,
     )
-    current = base_study.detect_onset(
-        baseline_points=4,
-        include_disabled=True,
+    current_first = base_study.experiments[0].with_tip_area_function(
+        TipAreaFunction(c0=29.0)
     )
+    current = Study(
+        experiments=(current_first, *base_study.experiments[1:]),
+        tip_area_function=TipAreaFunction(c0=30.0),
+    ).detect_onset(baseline_points=4, include_disabled=True)
     saved.save_session(session_path)
 
     restored = current.load_session(session_path, overwrite=True)
 
     assert restored.experiments[0].onset.baseline_points == 7
+    assert restored.tip_area_function == TipAreaFunction(c0=28.0)
+    assert restored.experiments[0].tip_area_function is None
+
+
+def test_load_session_keeps_current_tip_area_functions_without_overwrite(
+    base_study, tmp_path: Path
+) -> None:
+    session_path = tmp_path / "study-session.pkl"
+    saved_first = base_study.experiments[0].with_tip_area_function(
+        TipAreaFunction(c0=41.0)
+    )
+    saved = Study(
+        experiments=(saved_first, *base_study.experiments[1:]),
+        tip_area_function=TipAreaFunction(c0=33.0),
+    )
+    current_first = base_study.experiments[0].with_tip_area_function(
+        TipAreaFunction(c0=42.0)
+    )
+    current = Study(
+        experiments=(current_first, *base_study.experiments[1:]),
+        tip_area_function=TipAreaFunction(c0=34.0),
+    )
+    saved.save_session(session_path)
+
+    with pytest.warns(UserWarning) as warning_records:
+        restored = current.load_session(session_path)
+
+    messages = [str(record.message) for record in warning_records]
+    assert any(
+        "current study tip area function" in message for message in messages
+    )
+    assert any("current tip area function" in message for message in messages)
+    assert restored.tip_area_function == TipAreaFunction(c0=34.0)
+    assert restored.experiments[0].tip_area_function == TipAreaFunction(
+        c0=42.0
+    )
 
 
 def test_load_session_warns_about_missing_saved_stems(

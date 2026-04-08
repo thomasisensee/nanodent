@@ -28,17 +28,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-docs = [
-    "ipykernel",
-    "sphinx",
-    "sphinx_mdinclude",
-    "sphinx_rtd_theme",
-]
 dev = [
     "mypy",
     "pytest",
     "pytest-cov",
     "ruff",
+]
+docs = [
+    "ipykernel",
+    "sphinx",
+    "sphinx_mdinclude",
+    "sphinx_rtd_theme",
 ]
 lint = [
     "mypy",
