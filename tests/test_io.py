@@ -12,6 +12,28 @@ from nanodent.models import Experiment, TipAreaFunction
 DATA_DIR = Path(__file__).parent / "data"
 
 
+def _write_simple_hld(
+    file_path: Path,
+    *,
+    timestamp: str = "Wed Mar 04 13:56:27 2026",
+) -> None:
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_text(
+        "\n".join(
+            [
+                "File Version: Demo",
+                "Test Type: Indentation",
+                f"Time Stamp: {timestamp}",
+                "Test Data Points: 2",
+                "Time_s\tDisp_nm\tForce_uN",
+                "0.0\t0.0\t0.0",
+                "1.0\t2.0\t3.0",
+            ]
+        ),
+        encoding="iso-8859-1",
+    )
+
+
 def test_load_experiment_parses_sections_and_metadata() -> None:
     experiment = load_experiment(DATA_DIR / "experiment_a.hld")
 
@@ -303,3 +325,36 @@ def test_load_folder_discovers_siblings_and_sorts_experiments() -> None:
     assert all(
         experiment.paths.tdx_path is None for experiment in study.experiments
     )
+
+
+def test_load_folder_ignores_subdirectories_by_default(
+    tmp_path: Path,
+) -> None:
+    _write_simple_hld(tmp_path / "top_level.hld")
+    _write_simple_hld(
+        tmp_path / "nested" / "nested_only.hld",
+        timestamp="Wed Mar 04 14:56:27 2026",
+    )
+
+    study = load_folder(tmp_path)
+
+    assert [experiment.stem for experiment in study.experiments] == [
+        "top_level"
+    ]
+
+
+def test_load_folder_can_scan_subdirectories_recursively(
+    tmp_path: Path,
+) -> None:
+    _write_simple_hld(tmp_path / "top_level.hld")
+    _write_simple_hld(
+        tmp_path / "nested" / "nested_only.hld",
+        timestamp="Wed Mar 04 14:56:27 2026",
+    )
+
+    study = load_folder(tmp_path, recursive=True)
+
+    assert [experiment.stem for experiment in study.experiments] == [
+        "top_level",
+        "nested_only",
+    ]
