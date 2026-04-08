@@ -135,9 +135,7 @@ jobs:
 
       - name: Publish distributions to PyPI
         run: |
-          uv publish --index pypi \
-            --config-file uv.toml \
-            dist/*
+          uv publish dist/*
 
   github-release:
     name: Create GitHub Release
