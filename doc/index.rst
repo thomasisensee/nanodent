@@ -1,4 +1,4 @@
-test-2026-03-29
+nanodent
 ===============
 
 .. toctree::
@@ -6,7 +6,6 @@ test-2026-03-29
    :caption: Contents:
 
    intro
-   demo
    api
 
 Indices and tables
