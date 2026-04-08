@@ -21,11 +21,12 @@ from nanodent.analysis.quality import classify_quality as _classify_quality
 from nanodent.analysis.unloading import (
     detect_unloading as _detect_unloading,
 )
-from nanodent.models import Experiment
+from nanodent.models import Experiment, TipAreaFunction
 
-_SESSION_FORMAT_VERSION = 1
+_SESSION_FORMAT_VERSION = 2
 _DEFAULT_ENABLED = True
 _DEFAULT_DISABLED_REASON = None
+_DEFAULT_TIP_AREA_FUNCTION = TipAreaFunction(c0=24.5)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +100,7 @@ class Study:
     """A collection of experiments sorted by acquisition timestamp."""
 
     experiments: tuple[Experiment, ...]
+    tip_area_function: TipAreaFunction | None = None
 
     def __post_init__(self) -> None:
         """Store experiments in ascending timestamp order."""
@@ -126,6 +128,24 @@ class Study:
         """Iterate through experiments in timestamp order."""
 
         return iter(self.experiments)
+
+    def _with_experiments(self, experiments: Iterable[Experiment]) -> "Study":
+        """Return a new study preserving the study-wide tip-area default."""
+
+        return Study(
+            experiments=tuple(experiments),
+            tip_area_function=self.tip_area_function,
+        )
+
+    def with_tip_area_function(
+        self, tip_area_function: TipAreaFunction | None
+    ) -> "Study":
+        """Return a copy of the study with a new study-wide tip area."""
+
+        return Study(
+            experiments=self.experiments,
+            tip_area_function=tip_area_function,
+        )
 
     def group_by_time_gap(
         self,
@@ -264,13 +284,13 @@ class Study:
             classified.append(
                 experiment.with_enabled(result.enabled, reason=result.reason)
             )
-        return Study(experiments=tuple(classified))
+        return self._with_experiments(classified)
 
     def analyze_oliver_pharr(
         self,
         *,
         stems: Iterable[str] | str | None = None,
-        fit_model: str = "linear_fraction",
+        fit_model: str = "power_law_full",
         unloading_fraction: float | None = None,
         smoothing: Mapping[str, Any] | None = None,
         fit_num_points: int = 200,
@@ -329,6 +349,10 @@ class Study:
                             else updated.onset.baseline_offset_uN
                         ),
                         epsilon=epsilon,
+                        tip_area_function=_resolve_tip_area_function(
+                            updated,
+                            study_tip_area_function=self.tip_area_function,
+                        ),
                         stem=updated.stem,
                     )
                 )
@@ -337,7 +361,7 @@ class Study:
             analysis_name="Oliver-Pharr analysis",
             skipped_stems=skipped,
         )
-        return Study(experiments=tuple(experiments))
+        return self._with_experiments(experiments)
 
     def detect_onset(
         self,
@@ -400,7 +424,7 @@ class Study:
             reason="onset results were recomputed",
             stems=invalidated_oliver_pharr,
         )
-        return Study(experiments=tuple(experiments))
+        return self._with_experiments(experiments)
 
     def detect_force_peaks(
         self,
@@ -444,7 +468,7 @@ class Study:
             analysis_name="force-peak detection",
             skipped_stems=skipped,
         )
-        return Study(experiments=tuple(experiments))
+        return self._with_experiments(experiments)
 
     def detect_unloading(
         self,
@@ -491,7 +515,7 @@ class Study:
             reason="unloading results were recomputed",
             stems=invalidated_oliver_pharr,
         )
-        return Study(experiments=tuple(experiments))
+        return self._with_experiments(experiments)
 
     def set_enabled(
         self,
@@ -509,7 +533,7 @@ class Study:
             else experiment
             for experiment in self.experiments
         )
-        return Study(experiments=updated)
+        return self._with_experiments(updated)
 
     def enable_experiments(self, stems: Iterable[str] | str) -> "Study":
         """Return a study with selected experiment stems enabled."""
@@ -681,6 +705,9 @@ class Study:
             "package_version": _package_version(),
             "saved_at": datetime.now(),
             "experiment_count": len(self.experiments),
+            "study_tip_area_function": _make_pickle_safe(
+                self.tip_area_function
+            ),
             "experiments": {
                 experiment.stem: _session_entry(experiment)
                 for experiment in self.experiments
@@ -701,6 +728,9 @@ class Study:
         source = Path(path)
         with source.open("rb") as handle:
             payload = pickle.load(handle)
+        session_supports_tip_area_function = (
+            int(payload.get("format_version", 1)) >= 2
+        )
         experiments_payload = dict(payload.get("experiments", {}))
 
         missing_stems = [
@@ -709,11 +739,21 @@ class Study:
             if stem not in self._experiments_by_stem()
         ]
         self._warn_missing_session_stems(missing_stems)
+        study_tip_area_function, study_tip_area_conflict = (
+            _apply_saved_study_tip_area_function(
+                current_tip_area_function=self.tip_area_function,
+                saved_tip_area_function=payload.get("study_tip_area_function")
+                if session_supports_tip_area_function
+                else self.tip_area_function,
+                overwrite=overwrite,
+            )
+        )
 
         timestamp_mismatches: list[str] = []
         file_mismatches: list[str] = []
         state_conflicts: dict[str, list[str]] = {
             "enabled state": [],
+            "tip area function": [],
             "onset": [],
             "force peaks": [],
             "unloading": [],
@@ -744,6 +784,17 @@ class Study:
             )
             if enabled_conflict:
                 state_conflicts["enabled state"].append(experiment.stem)
+
+            if session_supports_tip_area_function:
+                current, tip_area_conflict = _apply_saved_tip_area_function(
+                    current,
+                    saved_tip_area_function=saved.get("tip_area_function"),
+                    overwrite=overwrite,
+                )
+                if tip_area_conflict:
+                    state_conflicts["tip area function"].append(
+                        experiment.stem
+                    )
 
             current, onset_conflict = _apply_saved_analysis_result(
                 current,
@@ -798,7 +849,14 @@ class Study:
             state_conflicts=state_conflicts,
             overwrite=overwrite,
         )
-        return Study(experiments=tuple(updated))
+        self._warn_study_tip_area_conflict(
+            conflict=study_tip_area_conflict,
+            overwrite=overwrite,
+        )
+        return Study(
+            experiments=tuple(updated),
+            tip_area_function=study_tip_area_function,
+        )
 
     def _selected_stem_set(
         self,
@@ -896,6 +954,22 @@ class Study:
                 "Pass overwrite=True to apply the saved state.",
                 stacklevel=2,
             )
+
+    def _warn_study_tip_area_conflict(
+        self,
+        *,
+        conflict: bool,
+        overwrite: bool,
+    ) -> None:
+        """Warn when a saved study-wide tip area function was not applied."""
+
+        if overwrite or not conflict:
+            return
+        warnings.warn(
+            "Kept the current study tip area function instead of the saved "
+            "session state. Pass overwrite=True to apply the saved state.",
+            stacklevel=2,
+        )
 
     def _experiments_by_stem(self) -> dict[str, Experiment]:
         """Return study experiments keyed by stem."""
@@ -1019,6 +1093,22 @@ def _pop_in_load(experiment: Experiment) -> float | None:
     return min(float(peak.force_uN) for peak in force_peaks.peaks)
 
 
+def _resolve_tip_area_function(
+    experiment: Experiment,
+    *,
+    study_tip_area_function: TipAreaFunction | None,
+) -> TipAreaFunction:
+    """Return the effective tip area function for one experiment."""
+
+    if experiment.tip_area_function is not None:
+        return experiment.tip_area_function
+    if experiment.parsed_tip_area_function is not None:
+        return experiment.parsed_tip_area_function
+    if study_tip_area_function is not None:
+        return study_tip_area_function
+    return _DEFAULT_TIP_AREA_FUNCTION
+
+
 def _average_timestamps(
     timestamps: Iterable[datetime],
 ) -> datetime:
@@ -1053,6 +1143,7 @@ def _session_entry(experiment: Experiment) -> dict[str, Any]:
         "hld_name": _experiment_source_name(experiment),
         "enabled": experiment.enabled,
         "disabled_reason": experiment.disabled_reason,
+        "tip_area_function": _make_pickle_safe(experiment.tip_area_function),
         "onset": _make_pickle_safe(experiment.onset),
         "force_peaks": _make_pickle_safe(experiment.force_peaks),
         "unloading": _make_pickle_safe(experiment.unloading),
@@ -1136,6 +1227,49 @@ def _apply_saved_analysis_result(
         result_name=result_name,
         result=saved_result,
     ), False
+
+
+def _apply_saved_tip_area_function(
+    experiment: Experiment,
+    *,
+    saved_tip_area_function: TipAreaFunction | None,
+    overwrite: bool,
+) -> tuple[Experiment, bool]:
+    """Apply a saved manual experiment tip area function if allowed."""
+
+    current_tip_area_function = experiment.tip_area_function
+    if saved_tip_area_function is None:
+        if overwrite:
+            return experiment.with_tip_area_function(None), False
+        return experiment, False
+    if (
+        current_tip_area_function is not None
+        and current_tip_area_function != saved_tip_area_function
+        and not overwrite
+    ):
+        return experiment, True
+    return experiment.with_tip_area_function(saved_tip_area_function), False
+
+
+def _apply_saved_study_tip_area_function(
+    *,
+    current_tip_area_function: TipAreaFunction | None,
+    saved_tip_area_function: TipAreaFunction | None,
+    overwrite: bool,
+) -> tuple[TipAreaFunction | None, bool]:
+    """Apply a saved study-wide tip area function if allowed."""
+
+    if saved_tip_area_function is None:
+        if overwrite:
+            return None, False
+        return current_tip_area_function, False
+    if (
+        current_tip_area_function is not None
+        and current_tip_area_function != saved_tip_area_function
+        and not overwrite
+    ):
+        return current_tip_area_function, True
+    return saved_tip_area_function, False
 
 
 def _replace_analysis_result(

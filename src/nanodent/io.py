@@ -13,6 +13,7 @@ from nanodent.models import (
     MetadataEntry,
     SegmentDefinition,
     SignalTable,
+    TipAreaFunction,
     _displacement_scale_factor,
     _force_scale_factor,
     _normalize_unit,
@@ -179,6 +180,7 @@ def _parse_hld_file(experiment_paths: ExperimentPaths) -> Experiment:
         temperature_c=_parse_first_float(metadata.get("Test Temp")),
         humidity_percent=_parse_first_float(metadata.get("Test Humidity")),
         segment_definitions=tuple(_parse_segments(metadata_entries)),
+        parsed_tip_area_function=_parse_tip_area_function(metadata),
     )
 
 
@@ -314,6 +316,29 @@ def _metadata_mapping(entries: Iterable[MetadataEntry]) -> dict[str, str]:
     for entry in entries:
         mapping[entry.key] = entry.value
     return mapping
+
+
+def _parse_tip_area_function(
+    metadata: dict[str, str],
+) -> TipAreaFunction | None:
+    """Return a parsed tip area function when the HLD metadata provides one."""
+
+    coefficients: dict[str, float] = {}
+    found = False
+    for index in range(6):
+        key = f"Tip C{index}"
+        value = metadata.get(key)
+        if value is None:
+            coefficients[f"c{index}"] = 0.0
+            continue
+        parsed = _parse_first_float(value)
+        if parsed is None:
+            raise ValueError(f"Missing numeric value for {key!r}")
+        coefficients[f"c{index}"] = parsed
+        found = True
+    if not found:
+        return None
+    return TipAreaFunction(**coefficients)
 
 
 def _parse_segments(

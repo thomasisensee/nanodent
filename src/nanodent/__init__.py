@@ -35,6 +35,7 @@ from nanodent.models import (
     MetadataEntry,
     SegmentDefinition,
     SignalTable,
+    TipAreaFunction,
 )
 from nanodent.study import ExperimentGroup, Study
 
@@ -60,6 +61,7 @@ __all__ = [
     "MetadataEntry",
     "SegmentDefinition",
     "SignalTable",
+    "TipAreaFunction",
     "Study",
     "__version__",
     "detect_force_peaks",

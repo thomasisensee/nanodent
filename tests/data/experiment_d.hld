@@ -1,5 +1,14 @@
 Test Type: Indentation
 Time Stamp: Wed Mar 11 12:10:00 2026
+Tip ID: Probe SN
+Tip Usable Depth: 15000 nm
+Tip C0: 24.5 nm^2/nm^2
+Tip C1: 7749.44 nm^2/nm
+Tip C2: 229988 nm^2/nm^0.5
+Tip C3: -2.17869e+06 nm^2/nm^0.25
+Tip C4: 2.49969e+06 nm^2/nm^0.125
+Tip C5: 0 nm^2/nm^0.0625
+Tip B: 0 nm
 Test Data Points: 2798
 Time_s	Disp_nm	Force_uN	LoadCell_nm	PiezoDisp_nm	Disp_V	Force_V	Piezo_LowV
 0.000000	-0.449004	5.928170	3541.705765	9438.202291	-1.967391	-2.141406	0.001628

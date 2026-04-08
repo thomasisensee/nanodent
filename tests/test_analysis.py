@@ -14,6 +14,7 @@ from nanodent.analysis.quality import (
     classify_quality,
 )
 from nanodent.analysis.unloading import detect_unloading
+from nanodent.models import TipAreaFunction
 
 
 def _make_linear_unloading_curve() -> tuple[np.ndarray, np.ndarray]:
@@ -381,6 +382,7 @@ def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
         unloading_x,
         unloading_y,
         unloading_start_trace_index=100,
+        fit_model="linear_fraction",
         unloading_fraction=0.25,
         onset_disp_nm=20.0,
     )
@@ -409,6 +411,7 @@ def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:
     assert result.hmax_nm == pytest.approx(80.0)
     assert result.contact_depth_nm == pytest.approx(65.0)
     assert result.contact_area_nm2 == pytest.approx(103512.5)
+    assert result.tip_area_function == TipAreaFunction(c0=24.5)
     assert result.hardness_uN_per_nm2 == pytest.approx(100.0 / 103512.5)
     assert result.reduced_modulus_uN_per_nm2 == pytest.approx(
         0.5 * np.sqrt(np.pi) * 5.0 / np.sqrt(103512.5)
@@ -427,12 +430,14 @@ def test_analyze_oliver_pharr_records_smoothing_for_branch_fit() -> None:
         unloading_x,
         unloading_y,
         unloading_start_trace_index=100,
+        fit_model="linear_fraction",
         unloading_fraction=0.25,
     )
     smoothed_result = analyze_oliver_pharr(
         unloading_x,
         unloading_y,
         unloading_start_trace_index=100,
+        fit_model="linear_fraction",
         unloading_fraction=0.25,
         smoothing={"window_length": 21, "polyorder": 2},
     )
@@ -480,10 +485,20 @@ def test_analyze_oliver_pharr_rejects_invalid_unloading_fraction() -> None:
     unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
 
     with pytest.raises(ValueError, match="unloading_fraction"):
-        analyze_oliver_pharr(unloading_x, unloading_y, unloading_fraction=0.0)
+        analyze_oliver_pharr(
+            unloading_x,
+            unloading_y,
+            fit_model="linear_fraction",
+            unloading_fraction=0.0,
+        )
 
     with pytest.raises(ValueError, match="unloading_fraction"):
-        analyze_oliver_pharr(unloading_x, unloading_y, unloading_fraction=1.1)
+        analyze_oliver_pharr(
+            unloading_x,
+            unloading_y,
+            fit_model="linear_fraction",
+            unloading_fraction=1.1,
+        )
 
 
 def test_analyze_oliver_pharr_rejects_invalid_epsilon() -> None:
@@ -502,6 +517,7 @@ def test_analyze_oliver_pharr_marks_missing_onset_for_hardness() -> None:
         unloading_x,
         unloading_y,
         unloading_start_trace_index=100,
+        fit_model="linear_fraction",
         unloading_fraction=0.25,
     )
 
@@ -525,6 +541,7 @@ def test_analyze_oliver_pharr_applies_force_baseline_correction() -> None:
         unloading_x,
         unloading_y,
         unloading_start_trace_index=100,
+        fit_model="linear_fraction",
         unloading_fraction=0.25,
         onset_disp_nm=20.0,
         baseline_offset_uN=3.0,
@@ -545,6 +562,7 @@ def test_analyze_oliver_pharr_can_override_epsilon() -> None:
         unloading_x,
         unloading_y,
         unloading_start_trace_index=100,
+        fit_model="linear_fraction",
         unloading_fraction=0.25,
         onset_disp_nm=20.0,
         epsilon=0.5,
@@ -554,11 +572,43 @@ def test_analyze_oliver_pharr_can_override_epsilon() -> None:
     assert result.epsilon == pytest.approx(0.5)
     assert result.contact_depth_nm == pytest.approx(70.0)
     assert result.contact_area_nm2 == pytest.approx(24.5 * 70.0 * 70.0)
+    assert result.tip_area_function == TipAreaFunction(c0=24.5)
     assert result.reduced_modulus_uN_per_nm2 == pytest.approx(
         0.5
         * np.sqrt(np.pi)
         * result.stiffness_uN_per_nm
         / np.sqrt(result.contact_area_nm2)
+    )
+
+
+def test_analyze_oliver_pharr_uses_explicit_tip_area_function() -> None:
+    x, y = _make_linear_unloading_curve()
+    unloading_x, unloading_y = _slice_unloading_branch(x, y, 100)
+    tip_area_function = TipAreaFunction(
+        c0=24.5,
+        c1=7749.44,
+        c2=229988.0,
+        c3=-2.17869e6,
+        c4=2.49969e6,
+        c5=0.0,
+    )
+
+    result = analyze_oliver_pharr(
+        unloading_x,
+        unloading_y,
+        unloading_start_trace_index=100,
+        fit_model="linear_fraction",
+        unloading_fraction=0.25,
+        onset_disp_nm=20.0,
+        epsilon=0.5,
+        tip_area_function=tip_area_function,
+    )
+
+    assert result.hardness_success is True
+    assert result.contact_depth_nm == pytest.approx(70.0)
+    assert result.tip_area_function == tip_area_function
+    assert result.contact_area_nm2 == pytest.approx(
+        tip_area_function.evaluate(70.0)
     )
 
 
@@ -570,6 +620,7 @@ def test_analyze_oliver_pharr_marks_invalid_onset_corrected_hmax() -> None:
         unloading_x,
         unloading_y,
         unloading_start_trace_index=100,
+        fit_model="linear_fraction",
         unloading_fraction=0.25,
         onset_disp_nm=100.0,
     )
@@ -655,6 +706,7 @@ def test_analyze_oliver_pharr_keeps_trace_indices() -> None:
         unloading_x,
         unloading_y,
         unloading_start_trace_index=100,
+        fit_model="linear_fraction",
         unloading_fraction=0.25,
     )
 
@@ -694,7 +746,12 @@ def test_analyze_oliver_pharr_marks_too_few_unloading_points() -> None:
     x = np.array([2.0, 1.8, 1.6, 1.4], dtype=np.float64)
     y = np.array([2.0, 1.5, 1.0, 0.5], dtype=np.float64)
 
-    result = analyze_oliver_pharr(x, y, unloading_fraction=1.0)
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        fit_model="linear_fraction",
+        unloading_fraction=1.0,
+    )
 
     assert result.success is False
     assert result.reason == "too_few_unloading_points"
@@ -704,7 +761,12 @@ def test_analyze_oliver_pharr_marks_zero_stiffness() -> None:
     x = np.array([2.0, 1.9, 1.8, 1.7, 1.6, 1.5], dtype=np.float64)
     y = np.full_like(x, 2.0)
 
-    result = analyze_oliver_pharr(x, y, unloading_fraction=1.0)
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        fit_model="linear_fraction",
+        unloading_fraction=1.0,
+    )
 
     assert result.success is False
     assert result.reason == "zero_stiffness"
@@ -720,7 +782,12 @@ def test_analyze_oliver_pharr_marks_non_finite_window_as_fit_failure() -> None:
         dtype=np.float64,
     )
 
-    result = analyze_oliver_pharr(x, y, unloading_fraction=1.0)
+    result = analyze_oliver_pharr(
+        x,
+        y,
+        fit_model="linear_fraction",
+        unloading_fraction=1.0,
+    )
 
     assert result.success is False
     assert result.reason == "fit_failed"

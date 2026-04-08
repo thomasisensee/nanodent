@@ -49,6 +49,31 @@ class ExperimentPaths:
 
 
 @dataclass(frozen=True, slots=True)
+class TipAreaFunction:
+    """Polynomial-style tip area function for contact-area estimation."""
+
+    c0: float = 0.0
+    c1: float = 0.0
+    c2: float = 0.0
+    c3: float = 0.0
+    c4: float = 0.0
+    c5: float = 0.0
+
+    def evaluate(self, contact_depth_nm: float) -> float:
+        """Return the contact area in nm^2 for one contact depth."""
+
+        depth = float(contact_depth_nm)
+        return float(
+            self.c0 * np.power(depth, 2.0)
+            + self.c1 * depth
+            + self.c2 * np.power(depth, 0.5)
+            + self.c3 * np.power(depth, 0.25)
+            + self.c4 * np.power(depth, 0.125)
+            + self.c5 * np.power(depth, 0.0625)
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class SignalTable:
     """Tabular numeric section data with normalized column names."""
 
@@ -122,6 +147,8 @@ class Experiment:
     temperature_c: float | None = None
     humidity_percent: float | None = None
     segment_definitions: tuple[SegmentDefinition, ...] = ()
+    parsed_tip_area_function: TipAreaFunction | None = None
+    tip_area_function: TipAreaFunction | None = None
     enabled: bool = True
     disabled_reason: str | None = None
     onset: "OnsetDetectionResult | None" = None
@@ -301,6 +328,13 @@ class Experiment:
         """Return a copy of the experiment with updated unloading data."""
 
         return replace(self, unloading=result)
+
+    def with_tip_area_function(
+        self, tip_area_function: TipAreaFunction | None
+    ) -> "Experiment":
+        """Return a copy of the experiment with updated tip-area override."""
+
+        return replace(self, tip_area_function=tip_area_function)
 
     @classmethod
     def from_measurements(

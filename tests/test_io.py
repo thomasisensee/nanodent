@@ -7,7 +7,7 @@ import pytest
 from nanodent import load_experiment, load_folder
 from nanodent.analysis.unloading import detect_unloading
 from nanodent.io import _normalize_column_name
-from nanodent.models import Experiment
+from nanodent.models import Experiment, TipAreaFunction
 
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -34,6 +34,15 @@ def test_load_experiment_parses_sections_and_metadata() -> None:
     assert len(experiment.segment_definitions) == 0
     assert experiment.enabled is True
     assert experiment.disabled_reason is None
+    assert experiment.parsed_tip_area_function == TipAreaFunction(
+        c0=24.5,
+        c1=7749.44,
+        c2=229988.0,
+        c3=-2.17869e6,
+        c4=2.49969e6,
+        c5=0.0,
+    )
+    assert experiment.tip_area_function is None
     assert experiment.onset is None
     assert experiment.force_peaks is None
     assert experiment.unloading is None
@@ -112,6 +121,31 @@ def test_load_experiment_supports_zero_point_optional_sections(
     assert len(experiment.approach) == 0
     assert len(experiment.drift) == 0
     assert len(experiment.test) == 2
+
+
+def test_load_experiment_keeps_tip_area_function_optional(
+    tmp_path: Path,
+) -> None:
+    file_path = tmp_path / "no_tip_area.hld"
+    file_path.write_text(
+        "\n".join(
+            [
+                "File Version: Demo",
+                "Test Type: Indentation",
+                "Time Stamp: Wed Mar 04 13:56:27 2026",
+                "Test Data Points: 2",
+                "Time_s\tDisp_nm\tForce_uN",
+                "0.0\t0.0\t0.0",
+                "1.0\t2.0\t3.0",
+            ]
+        ),
+        encoding="iso-8859-1",
+    )
+
+    experiment = load_experiment(file_path)
+
+    assert experiment.parsed_tip_area_function is None
+    assert experiment.tip_area_function is None
 
 
 def test_load_experiment_converts_supported_source_units(

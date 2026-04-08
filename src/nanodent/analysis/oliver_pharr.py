@@ -10,9 +10,11 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import curve_fit
 
 from nanodent.analysis.filters import savgol
+from nanodent.models import TipAreaFunction
 
 _LINEAR_FIT_MODEL = "linear_fraction"
 _POWER_LAW_FIT_MODEL = "power_law_full"
+_DEFAULT_TIP_AREA_FUNCTION = TipAreaFunction(c0=24.5)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +52,7 @@ class OliverPharrExperimentResult:
     contact_area_nm2: float | None = None
     hardness_uN_per_nm2: float | None = None
     reduced_modulus_uN_per_nm2: float | None = None
+    tip_area_function: TipAreaFunction | None = None
     x_fit: NDArray[np.float64] = field(
         default_factory=lambda: np.empty(0, dtype=np.float64)
     )
@@ -90,6 +93,7 @@ class OliverPharrExperimentResult:
             "contact_area_nm2": self.contact_area_nm2,
             "hardness_uN_per_nm2": self.hardness_uN_per_nm2,
             "reduced_modulus_uN_per_nm2": self.reduced_modulus_uN_per_nm2,
+            "tip_area_function": self.tip_area_function,
         }
 
 
@@ -99,7 +103,7 @@ def analyze_oliver_pharr(
     *,
     unloading_start_trace_index: int = 0,
     fit_model: Literal["linear_fraction", "power_law_full"] = (
-        _LINEAR_FIT_MODEL
+        _POWER_LAW_FIT_MODEL
     ),
     unloading_fraction: float | None = None,
     smoothing: Mapping[str, Any] | None = None,
@@ -107,6 +111,7 @@ def analyze_oliver_pharr(
     onset_disp_nm: float | None = None,
     baseline_offset_uN: float | None = None,
     epsilon: float = 0.75,
+    tip_area_function: TipAreaFunction | None = None,
     stem: str = "",
 ) -> OliverPharrExperimentResult:
     """Fit one supported Oliver-Pharr model to an unloading branch.
@@ -134,6 +139,8 @@ def analyze_oliver_pharr(
         baseline_offset_uN: Optional force baseline offset subtracted before
             evaluation and fitting.
         epsilon: Geometry factor used for contact-depth estimation.
+        tip_area_function: Optional tip area function used for contact-area
+            estimation. When omitted, defaults to `24.5 * hc^2`.
         stem: Optional experiment label propagated by higher-level wrappers.
 
     Returns:
@@ -146,6 +153,11 @@ def analyze_oliver_pharr(
         raise ValueError(
             "unloading_start_trace_index must refer to a valid sample."
         )
+    resolved_tip_area_function = (
+        _DEFAULT_TIP_AREA_FUNCTION
+        if tip_area_function is None
+        else tip_area_function
+    )
 
     disp_array = np.asarray(disp_nm, dtype=np.float64)
     force_array = np.asarray(force_uN, dtype=np.float64)
@@ -223,6 +235,7 @@ def analyze_oliver_pharr(
             result,
             onset_disp_nm=onset_disp_nm,
             epsilon=epsilon,
+            tip_area_function=resolved_tip_area_function,
         )
 
     if fit_model == _LINEAR_FIT_MODEL:
@@ -260,6 +273,7 @@ def analyze_oliver_pharr(
         result,
         onset_disp_nm=onset_disp_nm,
         epsilon=epsilon,
+        tip_area_function=resolved_tip_area_function,
     )
 
 
@@ -751,6 +765,7 @@ def _attach_hardness(
     *,
     onset_disp_nm: float | None,
     epsilon: float,
+    tip_area_function: TipAreaFunction,
 ) -> OliverPharrExperimentResult:
     """Return an Oliver-Pharr result with hardness diagnostics attached."""
 
@@ -759,6 +774,7 @@ def _attach_hardness(
             result,
             epsilon=float(epsilon),
             onset_disp_nm=None,
+            tip_area_function=tip_area_function,
             hardness_success=False,
             hardness_reason="missing_onset",
         )
@@ -767,6 +783,7 @@ def _attach_hardness(
             result,
             epsilon=float(epsilon),
             onset_disp_nm=float(onset_disp_nm),
+            tip_area_function=tip_area_function,
             hardness_success=False,
             hardness_reason="missing_evaluation_force",
         )
@@ -775,6 +792,7 @@ def _attach_hardness(
             result,
             epsilon=float(epsilon),
             onset_disp_nm=float(onset_disp_nm),
+            tip_area_function=tip_area_function,
             hardness_success=False,
             hardness_reason="missing_evaluation_disp",
         )
@@ -783,6 +801,7 @@ def _attach_hardness(
             result,
             epsilon=float(epsilon),
             onset_disp_nm=float(onset_disp_nm),
+            tip_area_function=tip_area_function,
             hardness_success=False,
             hardness_reason="missing_stiffness",
         )
@@ -794,6 +813,7 @@ def _attach_hardness(
             epsilon=float(epsilon),
             onset_disp_nm=float(onset_disp_nm),
             hmax_nm=hmax_nm,
+            tip_area_function=tip_area_function,
             hardness_success=False,
             hardness_reason="invalid_hmax",
         )
@@ -809,11 +829,12 @@ def _attach_hardness(
             onset_disp_nm=float(onset_disp_nm),
             hmax_nm=hmax_nm,
             contact_depth_nm=contact_depth_nm,
+            tip_area_function=tip_area_function,
             hardness_success=False,
             hardness_reason="invalid_contact_depth",
         )
 
-    contact_area_nm2 = float(24.5 * contact_depth_nm * contact_depth_nm)
+    contact_area_nm2 = tip_area_function.evaluate(contact_depth_nm)
     if not np.isfinite(contact_area_nm2) or contact_area_nm2 <= 0.0:
         return replace(
             result,
@@ -822,6 +843,7 @@ def _attach_hardness(
             hmax_nm=hmax_nm,
             contact_depth_nm=contact_depth_nm,
             contact_area_nm2=contact_area_nm2,
+            tip_area_function=tip_area_function,
             hardness_success=False,
             hardness_reason="invalid_contact_area",
         )
@@ -842,6 +864,7 @@ def _attach_hardness(
         contact_area_nm2=contact_area_nm2,
         hardness_uN_per_nm2=hardness_uN_per_nm2,
         reduced_modulus_uN_per_nm2=reduced_modulus_uN_per_nm2,
+        tip_area_function=tip_area_function,
         hardness_success=True,
         hardness_reason=None,
     )
