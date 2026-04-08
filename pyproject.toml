@@ -35,9 +35,8 @@ dev = [
     "ruff",
 ]
 docs = [
-    "ipykernel",
+    "myst-parser",
     "sphinx",
-    "sphinx_mdinclude",
     "sphinx_rtd_theme",
 ]
 lint = [
