@@ -1140,7 +1140,6 @@ def _session_entry(experiment: Experiment) -> dict[str, Any]:
     return {
         "timestamp": experiment.timestamp,
         "source_name": _experiment_source_name(experiment),
-        "hld_name": _experiment_source_name(experiment),
         "enabled": experiment.enabled,
         "disabled_reason": experiment.disabled_reason,
         "tip_area_function": _make_pickle_safe(experiment.tip_area_function),

@@ -108,9 +108,6 @@ def plot_experiments(
     target: PlotSelection,
     *,
     study: Study | None = None,
-    section: str = "test",
-    x: str = "disp_nm",
-    y: str = "force_uN",
     smoothing: Mapping[str, Any] | None = None,
     cmap: str = "viridis",
     max_gap: timedelta = timedelta(minutes=30),
@@ -123,7 +120,7 @@ def plot_experiments(
     fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
 ) -> Axes:
-    """Plot one or more experiment curves onto an existing axes."""
+    """Plot one or more test force-displacement curves onto an axes."""
 
     experiments = _coerce_experiments(
         target,
@@ -131,23 +128,14 @@ def plot_experiments(
         max_gap=max_gap,
         selection=selection,
     )
-    use_force_displacement = (
-        section == "test" and x == "disp_nm" and y == "force_uN"
-    )
-
     color_map = plt.get_cmap(cmap, max(len(experiments), 1))
     for index, experiment in enumerate(experiments):
-        onset_offset = _onset_axis_offset(
+        onset_offset = _onset_disp_offset(
             experiment,
-            section=section,
-            axis=x,
             zero_onset=zero_onset,
         )
         curve = _prepare_curve(
             experiment,
-            section=section,
-            x=x,
-            y=y,
             smoothing=smoothing,
             onset_offset=onset_offset,
         )
@@ -163,22 +151,18 @@ def plot_experiments(
             ax,
             experiment=experiment,
             curve=curve,
-            show_unloading=show_unloading and use_force_displacement,
+            show_unloading=show_unloading,
             curve_kwargs=curve_kwargs,
             unloading_kwargs=unloading_kwargs,
         )
 
-        fit_result = (
-            experiment.oliver_pharr
-            if show_oliver_pharr and use_force_displacement
-            else None
-        )
+        fit_result = experiment.oliver_pharr if show_oliver_pharr else None
         _plot_oliver_pharr_overlay(
             ax,
             stem=experiment.stem,
             fit_result=fit_result,
             fit_kwargs=fit_kwargs,
-            onset_offset=onset_offset if x == "disp_nm" else None,
+            onset_offset=onset_offset,
             show_evaluation_marker=show_oliver_pharr_evaluation,
         )
 
@@ -190,9 +174,6 @@ def save_experiment_plots(
     output_dir: str | Path,
     *,
     study: Study | None = None,
-    section: str = "test",
-    x: str = "disp_nm",
-    y: str = "force_uN",
     smoothing: Mapping[str, Any] | None = None,
     max_gap: timedelta = timedelta(minutes=30),
     selection: Literal["enabled", "disabled", "both"] = "enabled",
@@ -207,7 +188,7 @@ def save_experiment_plots(
     fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
 ) -> list[Path]:
-    """Save one plot per experiment using output names from `.hld` files."""
+    """Save one force-displacement plot per experiment."""
 
     experiments = _coerce_experiments(
         groups,
@@ -226,9 +207,6 @@ def save_experiment_plots(
             ax,
             experiment,
             study=study,
-            section=section,
-            x=x,
-            y=y,
             smoothing=smoothing,
             max_gap=max_gap,
             selection="both",
@@ -241,8 +219,8 @@ def save_experiment_plots(
             **line_kwargs,
         )
         ax.set_title(experiment.stem)
-        ax.set_xlabel(x)
-        ax.set_ylabel(y)
+        ax.set_xlabel("disp_nm")
+        ax.set_ylabel("force_uN")
         if xlim is not None:
             ax.set_xlim(*xlim)
         if ylim is not None:
@@ -250,9 +228,6 @@ def save_experiment_plots(
         _decorate_saved_experiment_axes(
             ax,
             experiment=experiment,
-            section=section,
-            x=x,
-            y=y,
             zero_onset=zero_onset,
         )
         ax.grid(alpha=0.2)
@@ -274,17 +249,12 @@ def _decorate_saved_experiment_axes(
     ax: Axes,
     *,
     experiment: Experiment,
-    section: str,
-    x: str,
-    y: str,
     zero_onset: bool = False,
 ) -> None:
     """Apply saved-plot-only annotations for one experiment axes."""
 
     ax.set_title(_format_saved_experiment_title(experiment))
     _add_saved_plot_analysis_box(ax, experiment=experiment)
-    if not _uses_force_displacement_axes(section=section, x=x, y=y):
-        return
     events = _saved_plot_annotation_events(experiment, zero_onset=zero_onset)
     _add_saved_plot_top_axis(ax, events=events)
     _add_saved_plot_right_axis(ax, events=events)
@@ -405,12 +375,6 @@ def _plot_unloading_overlay(
         curve.y_values[start_index:],
         **overlay_kwargs,
     )
-
-
-def _uses_force_displacement_axes(*, section: str, x: str, y: str) -> bool:
-    """Return whether the axes represent the test force-displacement view."""
-
-    return section == "test" and x == "disp_nm" and y == "force_uN"
 
 
 def _format_saved_experiment_title(experiment: Experiment) -> str:
@@ -550,12 +514,7 @@ def _saved_plot_annotation_events(
     if len(force) == 0 or len(disp) == 0:
         return []
 
-    onset_offset = _onset_axis_offset(
-        experiment,
-        section="test",
-        axis="disp_nm",
-        zero_onset=zero_onset,
-    )
+    onset_offset = _onset_disp_offset(experiment, zero_onset=zero_onset)
 
     events: list[_SavedPlotAnnotationEvent] = []
     onset = experiment.onset
@@ -739,17 +698,13 @@ class _PreparedCurve:
 def _prepare_curve(
     experiment: Experiment,
     *,
-    section: str,
-    x: str,
-    y: str,
     smoothing: Mapping[str, Any] | None,
     onset_offset: float | None,
 ) -> _PreparedCurve:
-    """Return plotting arrays for one experiment and signal selection."""
+    """Return canonical force-displacement plotting arrays."""
 
-    table = experiment.section(section)
-    x_values = np.asarray(table[x], dtype=np.float64)
-    y_values = np.asarray(table[y], dtype=np.float64)
+    x_values = np.asarray(experiment.trace["disp_nm"], dtype=np.float64)
+    y_values = np.asarray(experiment.trace["force_uN"], dtype=np.float64)
     if smoothing is not None:
         smoothing_kwargs = dict(smoothing)
         x_values = savgol(x_values, **smoothing_kwargs)
@@ -759,33 +714,21 @@ def _prepare_curve(
     return _PreparedCurve(x_values=x_values, y_values=y_values)
 
 
-def _onset_axis_offset(
+def _onset_disp_offset(
     experiment: Experiment,
     *,
-    section: str,
-    axis: str,
     zero_onset: bool,
 ) -> float | None:
-    """Return the onset-derived offset for a supported x-axis."""
+    """Return the onset displacement used to zero the x-axis when requested."""
 
-    if not zero_onset or section != "test":
+    if not zero_onset:
         return None
     onset = experiment.onset
     if onset is None or not onset.success:
         return None
-    if axis == "disp_nm":
-        return (
-            float(onset.onset_disp_nm)
-            if onset.onset_disp_nm is not None
-            else None
-        )
-    if axis == "time_s":
-        return (
-            float(onset.onset_time_s)
-            if onset.onset_time_s is not None
-            else None
-        )
-    return None
+    return (
+        float(onset.onset_disp_nm) if onset.onset_disp_nm is not None else None
+    )
 
 
 def _shift_axis_value(value: float, onset_offset: float | None) -> float:

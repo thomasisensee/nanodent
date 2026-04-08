@@ -102,7 +102,7 @@ def plot_group_timeline(*args: Any, **kwargs: Any) -> tuple["Figure", "Axes"]:
 
 
 def plot_experiments(*args: Any, **kwargs: Any) -> "Axes":
-    """Lazily import the generic experiment plotting helper.
+    """Lazily import the experiment force-displacement plotting helper.
 
     Args:
         *args: Positional args forwarded to
@@ -111,7 +111,7 @@ def plot_experiments(*args: Any, **kwargs: Any) -> "Axes":
             `nanodent.plotting.plot_experiments`.
 
     Returns:
-        Axes containing the plotted experiment curves.
+        Axes containing the plotted experiment force-displacement curves.
     """
 
     from nanodent.plotting import plot_experiments as _plot_experiments

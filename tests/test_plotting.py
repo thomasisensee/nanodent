@@ -246,16 +246,6 @@ def test_plot_experiments_can_draw_unloading_overlay_when_requested() -> None:
     plt.close(figure)
 
 
-def test_plot_experiments_ignores_attached_fit_for_other_axes() -> None:
-    experiment = _make_experiment()
-    figure, ax = plt.subplots()
-
-    plot_experiments(ax, experiment, x="time_s", y="force_uN")
-
-    assert len(ax.lines) == 1
-    plt.close(figure)
-
-
 def test_plot_experiments_can_zero_displacement_at_onset() -> None:
     experiment = _make_experiment()
     figure, ax = plt.subplots()
@@ -304,21 +294,6 @@ def test_plot_experiments_shifts_evaluation_marker_when_zeroing_onset() -> (
     plt.close(figure)
 
 
-def test_plot_experiments_can_zero_time_at_onset() -> None:
-    experiment = _make_experiment()
-    figure, ax = plt.subplots()
-
-    plot_experiments(ax, experiment, x="time_s", y="force_uN", zero_onset=True)
-
-    curve_x = ax.lines[0].get_xdata()
-    onset_time = float(experiment.onset.onset_time_s)
-
-    assert len(ax.lines) == 1
-    assert curve_x[experiment.onset.onset_index] == 0.0
-    assert curve_x[0] == -onset_time
-    plt.close(figure)
-
-
 def test_plot_experiments_leaves_curve_unchanged_without_usable_onset() -> (
     None
 ):
@@ -351,9 +326,6 @@ def test_saved_plot_decoration_adds_top_axis_and_analysis_box() -> None:
     _decorate_saved_experiment_axes(
         ax,
         experiment=experiment,
-        section="test",
-        x="disp_nm",
-        y="force_uN",
     )
 
     assert ax.get_title() == "synthetic\n2026-03-04 13:56:27"
@@ -423,9 +395,6 @@ def test_saved_plot_decoration_zeroes_top_axis_positions_at_onset() -> None:
     _decorate_saved_experiment_axes(
         ax,
         experiment=experiment,
-        section="test",
-        x="disp_nm",
-        y="force_uN",
         zero_onset=True,
     )
 
@@ -456,24 +425,6 @@ def test_saved_plot_decoration_zeroes_top_axis_positions_at_onset() -> None:
     plt.close(figure)
 
 
-def test_saved_plot_decoration_skips_top_axis_for_other_axes() -> None:
-    experiment = _make_experiment()
-    figure, ax = plt.subplots()
-
-    _decorate_saved_experiment_axes(
-        ax,
-        experiment=experiment,
-        section="test",
-        x="time_s",
-        y="force_uN",
-    )
-
-    assert ax.get_title() == "synthetic\n2026-03-04 13:56:27"
-    assert len(ax.texts) == 1
-    assert len(figure.axes) == 1
-    plt.close(figure)
-
-
 def test_saved_plot_decoration_omits_missing_analysis_values() -> None:
     experiment = _make_experiment().with_oliver_pharr(
         replace(
@@ -487,9 +438,6 @@ def test_saved_plot_decoration_omits_missing_analysis_values() -> None:
     _decorate_saved_experiment_axes(
         ax,
         experiment=experiment,
-        section="test",
-        x="disp_nm",
-        y="force_uN",
     )
 
     assert ax.get_title() == "synthetic\n2026-03-04 13:56:27"

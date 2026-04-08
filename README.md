@@ -21,7 +21,7 @@ following editable installation from this repository:
 ```
 git clone https://github.com/thomasisensee/nanodent
 cd nanodent
-python -m pip install --editable .[tests]
+python -m pip install --editable .[dev,docs,lint,tests]
 ```
 
 Having done so, the test suite can be run using `pytest`:
@@ -32,18 +32,17 @@ python -m pytest
 
 ## Quick Start
 
-`nanodent` loads `.hld` as the canonical source in v1, while keeping sibling
-`.tdm` and `.tdx` file paths attached to each experiment if available.
+`nanodent` loads `.hld` as the canonical source.
 
 ```python
 from datetime import datetime, timedelta
 
+import matplotlib.pyplot as plt
+
 from nanodent import (
     load_folder,
-    plot_hardness_over_time,
+    plot_experiments,
     plot_group_timeline,
-    plot_groups,
-    plot_reduced_modulus_over_time,
     save_experiment_plots,
 )
 
@@ -67,13 +66,10 @@ timeline_fig, timeline_ax = plot_group_timeline(
 )
 
 fig, ax = plt.subplots()
-nanodent.plot_experiments(
+plot_experiments(
     ax,
     filtered_study,
-    oliver_pharr=op_result,
-    fit_kwargs={"color": "gray", "linestyle": "solid", "linewidth": "2"},
-    x="disp_nm",
-    y="force_uN",
+    fit_kwargs={"color": "gray", "linestyle": "solid", "linewidth": 2},
     zero_onset=False,
     cmap="rainbow",
 )
@@ -98,7 +94,8 @@ such as `outlier_disp` or `outlier_force`.
 Grouping and plotting ignore disabled experiments by default; group summaries
 include them by default so quality decisions stay visible. Pass
 `include_disabled=True` when you want disabled runs included in plots or
-grouping output.
+grouping output. `plot_experiments(...)` and `save_experiment_plots(...)`
+always visualize the test force-displacement curve.
 
 The public API also exposes:
 
