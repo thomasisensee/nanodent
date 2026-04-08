@@ -50,11 +50,16 @@ def load_experiment(path: str | Path) -> Experiment:
     return _parse_hld_file(experiment_paths)
 
 
-def load_folder(path: str | Path) -> Study:
+def load_folder(
+    path: str | Path,
+    *,
+    recursive: bool = False,
+) -> Study:
     """Load all parseable experiments from a folder.
 
     Args:
         path: Directory containing one or more experiment file triplets.
+        recursive: When `True`, also scan subdirectories recursively.
 
     Returns:
         Study containing all experiments discovered in the folder, sorted by
@@ -70,7 +75,10 @@ def load_folder(path: str | Path) -> Study:
 
     experiments = [
         _parse_hld_file(experiment_paths)
-        for experiment_paths in _scan_experiment_paths(folder)
+        for experiment_paths in _scan_experiment_paths(
+            folder,
+            recursive=recursive,
+        )
         if experiment_paths.hld_path.exists()
     ]
     return Study(experiments=tuple(experiments))
@@ -116,11 +124,16 @@ def _resolve_experiment_paths(path: Path) -> ExperimentPaths:
     )
 
 
-def _scan_experiment_paths(folder: Path) -> list[ExperimentPaths]:
+def _scan_experiment_paths(
+    folder: Path,
+    *,
+    recursive: bool = False,
+) -> list[ExperimentPaths]:
     """Scan a folder for experiment stems with a canonical `.hld` file.
 
     Args:
         folder: Directory to scan.
+        recursive: When `True`, include matching files from subdirectories.
 
     Returns:
         Sorted experiment path bundles for all stems that contain an `.hld`
@@ -128,10 +141,24 @@ def _scan_experiment_paths(folder: Path) -> list[ExperimentPaths]:
     """
 
     stems: dict[str, dict[str, Path]] = {}
-    for file_path in sorted(folder.iterdir()):
+    if recursive:
+        candidates = sorted(
+            path for path in folder.rglob("*") if path.is_file()
+        )
+    else:
+        candidates = sorted(
+            path for path in folder.iterdir() if path.is_file()
+        )
+
+    for file_path in candidates:
         suffix = file_path.suffix.lower()
         if suffix not in {".hld", ".tdm", ".tdx"}:
             continue
+        if suffix == ".hld" and ".hld" in stems.get(file_path.stem, {}):
+            raise ValueError(
+                "Duplicate experiment stem discovered while scanning folder: "
+                f"{file_path.stem}"
+            )
         stems.setdefault(file_path.stem, {})[suffix] = file_path
 
     experiment_paths = [
