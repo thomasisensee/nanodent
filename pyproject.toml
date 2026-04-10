@@ -16,6 +16,15 @@ version = "0.0.3"
 requires-python = ">=3.10"
 license-files = ["LICEN[CS]E*"]
 license = "MIT"
+keywords = [
+  "nanoindentation",
+  "indentation",
+  "contact-mechanics",
+  "oliver-pharr",
+  "hertzian",
+  "elastic-modulus",
+  "hardness",
+]
 classifiers = [
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
