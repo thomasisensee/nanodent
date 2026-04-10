@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from nanodent.analysis.force_peaks import detect_force_peaks
+from nanodent.analysis.hertzian import analyze_hertzian
 from nanodent.analysis.oliver_pharr import analyze_oliver_pharr
 from nanodent.analysis.onset import detect_onset
 from nanodent.analysis.unloading import detect_unloading
@@ -95,13 +96,23 @@ def _make_experiment_with_fit(
             disp_nm=disp,
         )
     )
-    return experiment.with_force_peaks(
+    experiment = experiment.with_force_peaks(
         detect_force_peaks(
             force,
             time_s=time,
             disp_nm=disp,
             prominence=10.0,
             threshold=1.0,
+        )
+    )
+    return experiment.with_hertzian(
+        analyze_hertzian(
+            disp,
+            force,
+            fit_end_index=experiment.force_peaks.peaks[0].index,
+            initial_onset_disp_nm=experiment.onset.onset_disp_nm,
+            baseline_offset_uN=experiment.onset.baseline_offset_uN,
+            stem="synthetic",
         )
     )
 
@@ -119,11 +130,12 @@ def test_plot_experiments_draws_attached_oliver_pharr_overlay() -> None:
 
     plot_experiments(ax, experiment)
 
-    assert len(ax.lines) == 3
+    assert len(ax.lines) == 4
     assert ax.lines[0].get_label() == "synthetic"
     assert ax.lines[1].get_label() == "synthetic fit"
     assert ax.lines[2].get_label() == "_nolegend_"
     assert ax.lines[2].get_linestyle() == ":"
+    assert ax.lines[3].get_label() == "synthetic Hertzian fit"
     assert np.allclose(
         ax.lines[1].get_xdata(),
         np.asarray(experiment.oliver_pharr.x_fit, dtype=np.float64)
@@ -142,7 +154,7 @@ def test_plot_experiments_can_draw_evaluation_marker_when_requested() -> None:
         show_oliver_pharr_evaluation=True,
     )
 
-    assert len(ax.lines) == 4
+    assert len(ax.lines) == 5
     marker_line = ax.lines[2]
     assert marker_line.get_label() == "_nolegend_"
     assert marker_line.get_marker() == "o"
@@ -186,7 +198,7 @@ def test_plot_experiments_omits_linear_extension_for_power_law_fit() -> None:
 
     plot_experiments(ax, experiment)
 
-    assert len(ax.lines) == 2
+    assert len(ax.lines) == 3
     assert ax.lines[1].get_label() == "synthetic fit"
     plt.close(figure)
 
@@ -206,7 +218,7 @@ def test_plot_experiments_resolves_groups_via_study() -> None:
 
     plot_experiments(ax, group, study=study)
 
-    assert len(ax.lines) == 6
+    assert len(ax.lines) == 8
     plt.close(figure)
 
 
@@ -228,7 +240,21 @@ def test_plot_experiments_can_hide_attached_oliver_pharr_overlay() -> None:
 
     plot_experiments(ax, experiment, show_oliver_pharr=False)
 
-    assert len(ax.lines) == 1
+    assert len(ax.lines) == 2
+    assert ax.lines[1].get_label() == "synthetic Hertzian fit"
+    plt.close(figure)
+
+
+def test_plot_experiments_can_hide_attached_hertzian_overlay() -> None:
+    experiment = _make_experiment()
+    figure, ax = plt.subplots()
+
+    plot_experiments(ax, experiment, show_hertzian=False)
+
+    assert len(ax.lines) == 3
+    assert all(
+        line.get_label() != "synthetic Hertzian fit" for line in ax.lines
+    )
     plt.close(figure)
 
 
@@ -238,7 +264,7 @@ def test_plot_experiments_can_draw_unloading_overlay_when_requested() -> None:
 
     plot_experiments(ax, experiment, show_unloading=True)
 
-    assert len(ax.lines) == 4
+    assert len(ax.lines) == 5
     assert np.array_equal(
         ax.lines[1].get_xdata(),
         np.asarray(experiment.test["disp_nm"], dtype=np.float64)[
@@ -336,7 +362,11 @@ def test_saved_plot_decoration_adds_top_axis_and_analysis_box() -> None:
     assert ax.texts[0].get_text() == (
         "S=5.00 uN/nm\n"
         f"H={experiment.oliver_pharr.hardness_uN_per_nm2:.3g} uN/nm^2\n"
-        f"Er={experiment.oliver_pharr.reduced_modulus_uN_per_nm2:.3g} uN/nm^2"
+        f"Er={experiment.oliver_pharr.reduced_modulus_uN_per_nm2:.3g} "
+        "uN/nm^2\n"
+        f"A={experiment.hertzian.amplitude_uN_per_nm_3_2:.3g} "
+        "uN/nm^(3/2)\n"
+        f"h0={experiment.hertzian.h_onset_nm:.3g} nm"
     )
     assert len(figure.axes) == 3
     top_ax = figure.axes[1]
@@ -445,7 +475,12 @@ def test_saved_plot_decoration_omits_missing_analysis_values() -> None:
 
     assert ax.get_title() == "synthetic\n2026-03-04 13:56:27"
     assert len(ax.texts) == 1
-    assert ax.texts[0].get_text() == "S=5.00 uN/nm"
+    assert ax.texts[0].get_text() == (
+        "S=5.00 uN/nm\n"
+        f"A={experiment.hertzian.amplitude_uN_per_nm_3_2:.3g} "
+        "uN/nm^(3/2)\n"
+        f"h0={experiment.hertzian.h_onset_nm:.3g} nm"
+    )
     assert len(figure.axes) == 3
     plt.close(figure)
 

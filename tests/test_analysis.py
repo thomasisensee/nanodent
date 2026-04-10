@@ -3,6 +3,7 @@ import pytest
 
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.force_peaks import detect_force_peaks
+from nanodent.analysis.hertzian import analyze_hertzian
 from nanodent.analysis.oliver_pharr import analyze_oliver_pharr
 from nanodent.analysis.onset import detect_onset
 from nanodent.analysis.quality import (
@@ -56,6 +57,20 @@ def _make_power_law_unloading_curve(
         np.concatenate([load_force, unload_force]),
         float(k),
     )
+
+
+def _make_hertzian_curve(
+    *,
+    amplitude: float = 0.25,
+    h_onset_nm: float = 12.0,
+    baseline_offset_uN: float = 4.0,
+) -> tuple[np.ndarray, np.ndarray, float, float]:
+    disp = np.linspace(0.0, 100.0, 101, dtype=np.float64)
+    force = (
+        amplitude * np.maximum(disp - h_onset_nm, 0.0) ** 1.5
+        + baseline_offset_uN
+    )
+    return disp, force, amplitude, h_onset_nm
 
 
 def _slice_unloading_branch(
@@ -372,6 +387,86 @@ def test_detect_unloading_validates_inputs_and_method() -> None:
 
     with pytest.raises(ValueError, match="method"):
         detect_unloading(force, method="invalid")
+
+
+def test_analyze_hertzian_fits_onloading_curve() -> None:
+    disp, force, amplitude, h_onset = _make_hertzian_curve()
+
+    result = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        initial_onset_disp_nm=h_onset + 5.0,
+        baseline_offset_uN=4.0,
+        stem="synthetic",
+    )
+
+    assert result.success is True
+    assert result.stem == "synthetic"
+    assert result.fit_start_index == 0
+    assert result.fit_end_index == len(disp) - 1
+    assert result.fit_point_count == len(disp)
+    assert result.initial_onset_disp_nm == pytest.approx(h_onset + 5.0)
+    assert result.force_correction_uN == pytest.approx(4.0)
+    assert result.amplitude_uN_per_nm_3_2 == pytest.approx(amplitude)
+    assert result.h_onset_nm == pytest.approx(h_onset)
+    assert result.r_squared == pytest.approx(1.0)
+    assert len(result.x_fit) == 200
+    assert len(result.y_fit) == 200
+    assert result.x_fit[0] == pytest.approx(result.h_onset_nm)
+    assert result.y_fit[0] == pytest.approx(0.0)
+
+
+def test_analyze_hertzian_keeps_pre_onset_samples_in_fit() -> None:
+    disp, force, amplitude, h_onset = _make_hertzian_curve()
+
+    result = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        baseline_offset_uN=4.0,
+    )
+
+    assert result.success is True
+    assert result.fit_point_count == len(disp)
+    assert result.amplitude_uN_per_nm_3_2 == pytest.approx(amplitude)
+    assert result.h_onset_nm == pytest.approx(h_onset)
+    assert result.x_fit[0] == pytest.approx(h_onset)
+
+
+def test_analyze_hertzian_applies_force_baseline_correction() -> None:
+    disp, force, _, _ = _make_hertzian_curve(baseline_offset_uN=7.5)
+
+    result = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        baseline_offset_uN=7.5,
+        fit_num_points=25,
+    )
+
+    assert result.success is True
+    assert result.force_correction_uN == pytest.approx(7.5)
+    assert result.y_fit[0] == pytest.approx(0.0)
+    assert len(result.y_fit) == 25
+
+
+def test_analyze_hertzian_marks_too_few_onloading_points() -> None:
+    disp = np.arange(4, dtype=np.float64)
+    force = np.arange(4, dtype=np.float64)
+
+    result = analyze_hertzian(disp, force, fit_end_index=3)
+
+    assert result.success is False
+    assert result.reason == "too_few_onloading_points"
+    assert result.fit_point_count == 4
+
+
+def test_analyze_hertzian_validates_fit_end_index() -> None:
+    disp, force, _, _ = _make_hertzian_curve()
+
+    with pytest.raises(ValueError, match="fit_end_index"):
+        analyze_hertzian(disp, force, fit_end_index=len(disp))
 
 
 def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:

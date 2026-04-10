@@ -15,6 +15,12 @@ import numpy as np
 from nanodent.analysis.force_peaks import (
     detect_force_peaks as _detect_force_peaks,
 )
+from nanodent.analysis.hertzian import (
+    analyze_hertzian,
+)
+from nanodent.analysis.hertzian import (
+    missing_force_peak_result as _missing_hertzian_force_peak_result,
+)
 from nanodent.analysis.oliver_pharr import analyze_oliver_pharr
 from nanodent.analysis.onset import detect_onset as _detect_onset
 from nanodent.analysis.quality import classify_quality as _classify_quality
@@ -363,6 +369,81 @@ class Study:
         )
         return self._with_experiments(experiments)
 
+    def analyze_hertzian(
+        self,
+        *,
+        stems: Iterable[str] | str | None = None,
+        smoothing: Mapping[str, Any] | None = None,
+        fit_num_points: int = 200,
+        peak_prominence: float = 100.0,
+        peak_threshold: float | None = 1.0,
+        include_disabled: bool = False,
+        overwrite: bool = False,
+    ) -> "Study":
+        """Analyze selected experiments with a Hertzian onloading fit."""
+
+        selected_stems = self._selected_stem_set(
+            stems=stems,
+            include_disabled=include_disabled,
+        )
+        skipped: list[str] = []
+        experiments: list[Experiment] = []
+        for experiment in self.experiments:
+            if experiment.stem not in selected_stems:
+                experiments.append(experiment)
+                continue
+            if not overwrite and _has_successful_result(experiment.hertzian):
+                skipped.append(experiment.stem)
+                experiments.append(experiment)
+                continue
+
+            updated = experiment
+            force_peaks = updated.force_peaks
+            if not _has_successful_result(force_peaks):
+                updated = updated.with_force_peaks(
+                    _detect_force_peaks(
+                        updated.trace["force_uN"],
+                        time_s=updated.trace["time_s"],
+                        disp_nm=updated.trace["disp_nm"],
+                        prominence=peak_prominence,
+                        threshold=peak_threshold,
+                    )
+                )
+                force_peaks = updated.force_peaks
+
+            initial_onset = (
+                None if updated.onset is None else updated.onset.onset_disp_nm
+            )
+            baseline_offset = (
+                None
+                if updated.onset is None
+                else updated.onset.baseline_offset_uN
+            )
+            force_peak_index = _first_force_peak_index(force_peaks)
+            if force_peak_index is None:
+                result = _missing_hertzian_force_peak_result(
+                    stem=updated.stem,
+                    initial_onset_disp_nm=initial_onset,
+                    baseline_offset_uN=baseline_offset,
+                )
+            else:
+                result = analyze_hertzian(
+                    updated.trace["disp_nm"],
+                    updated.trace["force_uN"],
+                    fit_end_index=force_peak_index,
+                    smoothing=smoothing,
+                    fit_num_points=fit_num_points,
+                    initial_onset_disp_nm=initial_onset,
+                    baseline_offset_uN=baseline_offset,
+                    stem=updated.stem,
+                )
+            experiments.append(updated.with_hertzian(result))
+        self._warn_skipped_results(
+            analysis_name="Hertzian analysis",
+            skipped_stems=skipped,
+        )
+        return self._with_experiments(experiments)
+
     def detect_onset(
         self,
         *,
@@ -386,6 +467,7 @@ class Study:
         )
         skipped: list[str] = []
         invalidated_oliver_pharr: list[str] = []
+        invalidated_hertzian: list[str] = []
         experiments: list[Experiment] = []
         for experiment in self.experiments:
             if experiment.stem not in selected_stems:
@@ -414,6 +496,9 @@ class Study:
             if experiment.oliver_pharr is not None:
                 updated = updated.with_oliver_pharr(None)
                 invalidated_oliver_pharr.append(experiment.stem)
+            if experiment.hertzian is not None:
+                updated = updated.with_hertzian(None)
+                invalidated_hertzian.append(experiment.stem)
             experiments.append(updated)
         self._warn_skipped_results(
             analysis_name="onset detection",
@@ -423,6 +508,11 @@ class Study:
             dependency_name="Oliver-Pharr",
             reason="onset results were recomputed",
             stems=invalidated_oliver_pharr,
+        )
+        self._warn_invalidated_results(
+            dependency_name="Hertzian",
+            reason="onset results were recomputed",
+            stems=invalidated_hertzian,
         )
         return self._with_experiments(experiments)
 
@@ -442,6 +532,7 @@ class Study:
             include_disabled=include_disabled,
         )
         skipped: list[str] = []
+        invalidated_hertzian: list[str] = []
         experiments: list[Experiment] = []
         for experiment in self.experiments:
             if experiment.stem not in selected_stems:
@@ -453,20 +544,27 @@ class Study:
                 skipped.append(experiment.stem)
                 experiments.append(experiment)
                 continue
-            experiments.append(
-                experiment.with_force_peaks(
-                    _detect_force_peaks(
-                        experiment.trace["force_uN"],
-                        time_s=experiment.trace["time_s"],
-                        disp_nm=experiment.trace["disp_nm"],
-                        prominence=prominence,
-                        threshold=threshold,
-                    )
+            updated = experiment.with_force_peaks(
+                _detect_force_peaks(
+                    experiment.trace["force_uN"],
+                    time_s=experiment.trace["time_s"],
+                    disp_nm=experiment.trace["disp_nm"],
+                    prominence=prominence,
+                    threshold=threshold,
                 )
             )
+            if experiment.hertzian is not None:
+                updated = updated.with_hertzian(None)
+                invalidated_hertzian.append(experiment.stem)
+            experiments.append(updated)
         self._warn_skipped_results(
             analysis_name="force-peak detection",
             skipped_stems=skipped,
+        )
+        self._warn_invalidated_results(
+            dependency_name="Hertzian",
+            reason="force-peak results were recomputed",
+            stems=invalidated_hertzian,
         )
         return self._with_experiments(experiments)
 
@@ -758,6 +856,7 @@ class Study:
             "force peaks": [],
             "unloading": [],
             "Oliver-Pharr": [],
+            "Hertzian": [],
         }
 
         updated: list[Experiment] = []
@@ -835,6 +934,16 @@ class Study:
             )
             if oliver_conflict:
                 state_conflicts["Oliver-Pharr"].append(experiment.stem)
+
+            current, hertzian_conflict = _apply_saved_analysis_result(
+                current,
+                saved_result=saved.get("hertzian"),
+                current_result=current.hertzian,
+                overwrite=overwrite,
+                result_name="hertzian",
+            )
+            if hertzian_conflict:
+                state_conflicts["Hertzian"].append(experiment.stem)
             updated.append(current)
 
         self._warn_session_mismatches(
@@ -1059,6 +1168,21 @@ def _scalar_metric_getter(metric: str) -> Any:
             if experiment.oliver_pharr is None
             else experiment.oliver_pharr.stiffness_uN_per_nm
         ),
+        "hertzian_amplitude": lambda experiment: (
+            None
+            if experiment.hertzian is None
+            else experiment.hertzian.amplitude_uN_per_nm_3_2
+        ),
+        "hertzian_onset": lambda experiment: (
+            None
+            if experiment.hertzian is None
+            else experiment.hertzian.h_onset_nm
+        ),
+        "hertzian_r_squared": lambda experiment: (
+            None
+            if experiment.hertzian is None
+            else experiment.hertzian.r_squared
+        ),
         "onset_disp": lambda experiment: (
             None
             if experiment.onset is None
@@ -1091,6 +1215,17 @@ def _pop_in_load(experiment: Experiment) -> float | None:
     if len(force_peaks.peaks) < 2:
         return None
     return min(float(peak.force_uN) for peak in force_peaks.peaks)
+
+
+def _first_force_peak_index(result: Any) -> int | None:
+    """Return the first detected force-peak index from an attached result."""
+
+    if result is None or not getattr(result, "success", False):
+        return None
+    peaks = getattr(result, "peaks", ())
+    if not peaks:
+        return None
+    return int(peaks[0].index)
 
 
 def _resolve_tip_area_function(
@@ -1147,6 +1282,7 @@ def _session_entry(experiment: Experiment) -> dict[str, Any]:
         "force_peaks": _make_pickle_safe(experiment.force_peaks),
         "unloading": _make_pickle_safe(experiment.unloading),
         "oliver_pharr": _make_pickle_safe(experiment.oliver_pharr),
+        "hertzian": _make_pickle_safe(experiment.hertzian),
     }
 
 
@@ -1287,6 +1423,8 @@ def _replace_analysis_result(
         return experiment.with_unloading(result)
     if result_name == "oliver_pharr":
         return experiment.with_oliver_pharr(result)
+    if result_name == "hertzian":
+        return experiment.with_hertzian(result)
     raise ValueError(f"Unknown analysis result {result_name!r}.")
 
 

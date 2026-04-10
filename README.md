@@ -49,6 +49,7 @@ from nanodent import (
 study = load_folder("path/to/experiment-folder")
 filtered_study = study.classify_quality()
 filtered_study = filtered_study.analyze_oliver_pharr()
+filtered_study = filtered_study.analyze_hertzian()
 hardness_rows = filtered_study.scalar_series("hardness")
 pop_in_rows = filtered_study.detect_force_peaks().scalar_series("pop_in_load")
 manual_groups = filtered_study.group_by_datetime_ranges(
@@ -102,6 +103,7 @@ The public API also exposes:
 - `load_experiment(path) -> Experiment`
 - `load_folder(path) -> Study`
 - `Study.analyze_oliver_pharr(...) -> Study`
+- `Study.analyze_hertzian(...) -> Study`
 - `Study.scalar_series(...) -> list[dict[str, Any]]`
 - `Study.save_session(path) -> Path`
 - `Study.load_session(path) -> Study`

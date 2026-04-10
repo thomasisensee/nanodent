@@ -69,6 +69,7 @@ def test_load_experiment_parses_sections_and_metadata() -> None:
     assert experiment.force_peaks is None
     assert experiment.unloading is None
     assert experiment.oliver_pharr is None
+    assert experiment.hertzian is None
 
 
 def test_normalize_column_name_handles_micro_variants() -> None:
