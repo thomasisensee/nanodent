@@ -434,6 +434,26 @@ def test_analyze_hertzian_keeps_pre_onset_samples_in_fit() -> None:
     assert result.x_fit[0] == pytest.approx(h_onset)
 
 
+def test_analyze_hertzian_display_curve_ends_at_fit_endpoint() -> None:
+    disp, force, _, _ = _make_hertzian_curve()
+    disp = disp.copy()
+    disp[80] = 120.0
+
+    result = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        baseline_offset_uN=4.0,
+    )
+
+    assert result.success is True
+    assert result.fit_point_count == len(disp)
+    assert (
+        np.max(disp[: result.fit_end_index + 1]) > disp[result.fit_end_index]
+    )
+    assert result.x_fit[-1] == pytest.approx(disp[result.fit_end_index])
+
+
 def test_analyze_hertzian_applies_force_baseline_correction() -> None:
     disp, force, _, _ = _make_hertzian_curve(baseline_offset_uN=7.5)
 

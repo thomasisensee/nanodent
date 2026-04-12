@@ -173,10 +173,11 @@ def analyze_hertzian(
 
     fitted_window = _hertzian_model(fit_disp, amplitude, h_onset)
     r_squared = _r_squared(fit_force, fitted_window)
-    x_fit_start = min(float(h_onset), float(np.max(fit_disp)))
+    fit_end_disp = float(fit_disp[-1])
+    x_fit_start = min(float(h_onset), fit_end_disp)
     x_fit = np.linspace(
         x_fit_start,
-        float(np.max(fit_disp)),
+        fit_end_disp,
         fit_num_points,
         dtype=np.float64,
     )
