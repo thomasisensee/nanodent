@@ -419,6 +419,8 @@ class Study:
                 if updated.onset is None
                 else updated.onset.baseline_offset_uN
             )
+            reduced_modulus = _reduced_modulus(updated)
+            pop_in_load = _pop_in_load(updated)
             force_peak_index = _first_force_peak_index(force_peaks)
             if force_peak_index is None:
                 result = _missing_hertzian_force_peak_result(
@@ -435,6 +437,8 @@ class Study:
                     fit_num_points=fit_num_points,
                     initial_onset_disp_nm=initial_onset,
                     baseline_offset_uN=baseline_offset,
+                    reduced_modulus_uN_per_nm2=reduced_modulus,
+                    pop_in_load_uN=pop_in_load,
                     stem=updated.stem,
                 )
             experiments.append(updated.with_hertzian(result))
@@ -1183,6 +1187,11 @@ def _scalar_metric_getter(metric: str) -> Any:
             if experiment.hertzian is None
             else experiment.hertzian.r_squared
         ),
+        "hertzian_radius": lambda experiment: (
+            None
+            if experiment.hertzian is None
+            else experiment.hertzian.radius_nm
+        ),
         "onset_disp": lambda experiment: (
             None
             if experiment.onset is None
@@ -1197,6 +1206,11 @@ def _scalar_metric_getter(metric: str) -> Any:
             else experiment.force_peaks.peak_count
         ),
         "pop_in_load": lambda experiment: _pop_in_load(experiment),
+        "tau_max": lambda experiment: (
+            None
+            if experiment.hertzian is None
+            else experiment.hertzian.tau_max_uN_per_nm2
+        ),
     }
     if metric not in registry:
         raise ValueError(
@@ -1215,6 +1229,15 @@ def _pop_in_load(experiment: Experiment) -> float | None:
     if len(force_peaks.peaks) < 2:
         return None
     return min(float(peak.force_uN) for peak in force_peaks.peaks)
+
+
+def _reduced_modulus(experiment: Experiment) -> float | None:
+    """Return a successful Oliver-Pharr reduced modulus if available."""
+
+    oliver_pharr = experiment.oliver_pharr
+    if oliver_pharr is None or not oliver_pharr.success:
+        return None
+    return oliver_pharr.reduced_modulus_uN_per_nm2
 
 
 def _first_force_peak_index(result: Any) -> int | None:

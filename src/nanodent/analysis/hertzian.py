@@ -28,6 +28,10 @@ class HertzianExperimentResult:
     force_correction_uN: float | None = None
     amplitude_uN_per_nm_3_2: float | None = None
     h_onset_nm: float | None = None
+    reduced_modulus_uN_per_nm2: float | None = None
+    radius_nm: float | None = None
+    pop_in_load_uN: float | None = None
+    tau_max_uN_per_nm2: float | None = None
     r_squared: float | None = None
     x_fit: NDArray[np.float64] = field(
         default_factory=lambda: np.empty(0, dtype=np.float64)
@@ -50,8 +54,57 @@ class HertzianExperimentResult:
             "force_correction_uN": self.force_correction_uN,
             "amplitude_uN_per_nm_3_2": self.amplitude_uN_per_nm_3_2,
             "h_onset_nm": self.h_onset_nm,
+            "reduced_modulus_uN_per_nm2": self.reduced_modulus_uN_per_nm2,
+            "radius_nm": self.radius_nm,
+            "pop_in_load_uN": self.pop_in_load_uN,
+            "tau_max_uN_per_nm2": self.tau_max_uN_per_nm2,
             "r_squared": self.r_squared,
         }
+
+
+def calculate_hertzian_radius(
+    hertzian_amplitude_uN_per_nm_3_2: float,
+    reduced_modulus_uN_per_nm2: float,
+) -> float:
+    """Return Hertzian tip radius implied by amplitude and reduced modulus."""
+
+    amplitude = _positive_finite(
+        hertzian_amplitude_uN_per_nm_3_2,
+        name="hertzian_amplitude_uN_per_nm_3_2",
+    )
+    reduced_modulus = _positive_finite(
+        reduced_modulus_uN_per_nm2,
+        name="reduced_modulus_uN_per_nm2",
+    )
+    return float(np.power(3.0 * amplitude / (4.0 * reduced_modulus), 2.0))
+
+
+def calculate_tau_max(
+    reduced_modulus_uN_per_nm2: float,
+    hertzian_amplitude_uN_per_nm_3_2: float,
+    pop_in_load_uN: float,
+) -> float:
+    """Return the maximum shear stress from OP, Hertzian, and pop-in values."""
+
+    reduced_modulus = _positive_finite(
+        reduced_modulus_uN_per_nm2,
+        name="reduced_modulus_uN_per_nm2",
+    )
+    amplitude = _positive_finite(
+        hertzian_amplitude_uN_per_nm_3_2,
+        name="hertzian_amplitude_uN_per_nm_3_2",
+    )
+    pop_in_load = _positive_finite(
+        pop_in_load_uN,
+        name="pop_in_load_uN",
+    )
+    inner = (
+        512.0
+        * pop_in_load
+        * np.power(reduced_modulus, 6.0)
+        / (27.0 * np.power(amplitude, 4.0))
+    )
+    return float((0.31 / np.pi) * np.power(inner, 1.0 / 3.0))
 
 
 def analyze_hertzian(
@@ -63,6 +116,8 @@ def analyze_hertzian(
     fit_num_points: int = 200,
     initial_onset_disp_nm: float | None = None,
     baseline_offset_uN: float | None = None,
+    reduced_modulus_uN_per_nm2: float | None = None,
+    pop_in_load_uN: float | None = None,
     stem: str = "",
 ) -> HertzianExperimentResult:
     """Fit a Hertzian onloading model up to a force-peak endpoint.
@@ -76,6 +131,10 @@ def analyze_hertzian(
         initial_onset_disp_nm: Optional initial guess for the fitted onset.
         baseline_offset_uN: Optional force baseline offset subtracted before
             fitting.
+        reduced_modulus_uN_per_nm2: Optional Oliver-Pharr reduced modulus used
+            to derive the Hertzian radius and maximum shear stress.
+        pop_in_load_uN: Optional second force-peak load used to derive maximum
+            shear stress.
         stem: Optional experiment label propagated by higher-level wrappers.
 
     Returns:
@@ -173,6 +232,23 @@ def analyze_hertzian(
 
     fitted_window = _hertzian_model(fit_disp, amplitude, h_onset)
     r_squared = _r_squared(fit_force, fitted_window)
+    reduced_modulus = _optional_positive_finite(
+        reduced_modulus_uN_per_nm2,
+        name="reduced_modulus_uN_per_nm2",
+    )
+    pop_in_load = _optional_positive_finite(
+        pop_in_load_uN,
+        name="pop_in_load_uN",
+    )
+    radius = _calculate_radius_or_none(
+        amplitude,
+        reduced_modulus,
+    )
+    tau_max = _calculate_tau_max_or_none(
+        reduced_modulus,
+        amplitude,
+        pop_in_load,
+    )
     fit_end_disp = float(fit_disp[-1])
     x_fit_start = min(float(h_onset), fit_end_disp)
     x_fit = np.linspace(
@@ -198,6 +274,10 @@ def analyze_hertzian(
         force_correction_uN=force_correction,
         amplitude_uN_per_nm_3_2=amplitude,
         h_onset_nm=h_onset,
+        reduced_modulus_uN_per_nm2=reduced_modulus,
+        radius_nm=radius,
+        pop_in_load_uN=pop_in_load,
+        tau_max_uN_per_nm2=tau_max,
         r_squared=r_squared,
         x_fit=x_fit,
         y_fit=y_fit,
@@ -258,6 +338,42 @@ def _fit_hertzian_parameters(
         maxfev=20000,
     )
     return float(parameters[0]), float(parameters[1])
+
+
+def _calculate_radius_or_none(
+    amplitude_uN_per_nm_3_2: float,
+    reduced_modulus_uN_per_nm2: float | None,
+) -> float | None:
+    """Return derived Hertzian radius when its dependency is usable."""
+
+    if reduced_modulus_uN_per_nm2 is None:
+        return None
+    try:
+        return calculate_hertzian_radius(
+            amplitude_uN_per_nm_3_2,
+            reduced_modulus_uN_per_nm2,
+        )
+    except ValueError:
+        return None
+
+
+def _calculate_tau_max_or_none(
+    reduced_modulus_uN_per_nm2: float | None,
+    amplitude_uN_per_nm_3_2: float,
+    pop_in_load_uN: float | None,
+) -> float | None:
+    """Return derived maximum shear stress when dependencies are usable."""
+
+    if reduced_modulus_uN_per_nm2 is None or pop_in_load_uN is None:
+        return None
+    try:
+        return calculate_tau_max(
+            reduced_modulus_uN_per_nm2,
+            amplitude_uN_per_nm_3_2,
+            pop_in_load_uN,
+        )
+    except ValueError:
+        return None
 
 
 def _failed_result(
@@ -335,3 +451,27 @@ def _r_squared(
     if np.isclose(total_sum, 0.0, atol=1e-12):
         return 1.0 if np.isclose(residual_sum, 0.0, atol=1e-12) else 0.0
     return float(1.0 - residual_sum / total_sum)
+
+
+def _optional_positive_finite(
+    value: float | None,
+    *,
+    name: str,
+) -> float | None:
+    """Return an optional dependency only when it is usable."""
+
+    if value is None:
+        return None
+    try:
+        return _positive_finite(value, name=name)
+    except (TypeError, ValueError):
+        return None
+
+
+def _positive_finite(value: float, *, name: str) -> float:
+    """Return a finite positive float or raise a descriptive error."""
+
+    parsed = float(value)
+    if not np.isfinite(parsed) or parsed <= 0.0:
+        raise ValueError(f"{name} must be finite and greater than 0.")
+    return parsed

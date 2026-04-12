@@ -6,6 +6,10 @@ import numpy as np
 import pytest
 
 from nanodent import load_folder
+from nanodent.analysis.hertzian import (
+    calculate_hertzian_radius,
+    calculate_tau_max,
+)
 from nanodent.models import (
     Experiment,
     ExperimentPaths,
@@ -673,6 +677,51 @@ def test_analyze_hertzian_experiment_e_ends_display_at_single_peak(
     )
 
 
+def test_analyze_hertzian_derives_radius_and_tau_max_from_dependencies(
+    base_study,
+) -> None:
+    analyzed = (
+        base_study.detect_onset()
+        .detect_force_peaks()
+        .analyze_oliver_pharr()
+        .analyze_hertzian()
+    )
+    checked_radius = False
+    checked_tau_max = False
+    for experiment in analyzed.experiments:
+        hertzian = experiment.hertzian
+        oliver_pharr = experiment.oliver_pharr
+        if hertzian is None or not hertzian.success:
+            continue
+        if oliver_pharr is None or not oliver_pharr.success:
+            continue
+        reduced_modulus = oliver_pharr.reduced_modulus_uN_per_nm2
+        amplitude = hertzian.amplitude_uN_per_nm_3_2
+        if reduced_modulus is None or amplitude is None:
+            continue
+        assert hertzian.reduced_modulus_uN_per_nm2 == pytest.approx(
+            reduced_modulus
+        )
+        assert hertzian.radius_nm == pytest.approx(
+            calculate_hertzian_radius(amplitude, reduced_modulus)
+        )
+        checked_radius = True
+        pop_in_load = min(
+            float(peak.force_uN) for peak in experiment.force_peaks.peaks
+        )
+        if len(experiment.force_peaks.peaks) < 2:
+            assert hertzian.tau_max_uN_per_nm2 is None
+            continue
+        assert hertzian.pop_in_load_uN == pytest.approx(pop_in_load)
+        assert hertzian.tau_max_uN_per_nm2 == pytest.approx(
+            calculate_tau_max(reduced_modulus, amplitude, pop_in_load)
+        )
+        checked_tau_max = True
+
+    assert checked_radius is True
+    assert checked_tau_max is True
+
+
 def test_analyze_oliver_pharr_forwards_power_law_options(base_study) -> None:
     load_disp = np.linspace(0.0, 100.0, 101)
     load_force = 0.01 * load_disp**2
@@ -1131,6 +1180,52 @@ def test_scalar_series_returns_pop_in_load_rows(base_study) -> None:
     assert rows == expected
 
 
+def test_scalar_series_returns_hertzian_radius_rows(base_study) -> None:
+    analyzed = (
+        base_study.detect_onset()
+        .detect_force_peaks()
+        .analyze_oliver_pharr()
+        .analyze_hertzian()
+    )
+    expected = [
+        {
+            "timestamp": experiment.timestamp,
+            "stem": experiment.stem,
+            "value": experiment.hertzian.radius_nm,
+        }
+        for experiment in analyzed.experiments
+        if experiment.hertzian is not None
+        and experiment.hertzian.radius_nm is not None
+    ]
+
+    rows = analyzed.scalar_series("hertzian_radius")
+
+    assert rows == expected
+
+
+def test_scalar_series_returns_tau_max_rows(base_study) -> None:
+    analyzed = (
+        base_study.detect_onset()
+        .detect_force_peaks()
+        .analyze_oliver_pharr()
+        .analyze_hertzian()
+    )
+    expected = [
+        {
+            "timestamp": experiment.timestamp,
+            "stem": experiment.stem,
+            "value": experiment.hertzian.tau_max_uN_per_nm2,
+        }
+        for experiment in analyzed.experiments
+        if experiment.hertzian is not None
+        and experiment.hertzian.tau_max_uN_per_nm2 is not None
+    ]
+
+    rows = analyzed.scalar_series("tau_max")
+
+    assert rows == expected
+
+
 def test_scalar_series_can_keep_missing_values(base_study) -> None:
     rows = base_study.scalar_series("hardness", drop_missing=False)
 
@@ -1163,6 +1258,17 @@ def test_scalar_series_pop_in_load_can_keep_missing_values(
         experiment.stem for experiment in rest
     ]
     assert all(row["value"] is not None for row in rows[1:])
+
+
+def test_scalar_series_tau_max_can_keep_missing_values(base_study) -> None:
+    analyzed = (
+        base_study.detect_onset().detect_force_peaks().analyze_hertzian()
+    )
+
+    rows = analyzed.scalar_series("tau_max", drop_missing=False)
+
+    assert len(rows) == len(analyzed.experiments)
+    assert all(row["value"] is None for row in rows)
 
 
 def test_scalar_series_respects_enabled_filter(base_study) -> None:
@@ -1278,6 +1384,54 @@ def test_group_scalar_series_returns_grouped_pop_in_load_rows(
         )
 
     rows = analyzed.group_scalar_series("pop_in_load")
+
+    assert rows == expected_rows
+
+
+def test_group_scalar_series_returns_grouped_tau_max_rows(
+    base_study,
+) -> None:
+    analyzed = (
+        base_study.detect_onset()
+        .detect_force_peaks()
+        .analyze_oliver_pharr()
+        .analyze_hertzian()
+    )
+    groups = analyzed.group_by_time_gap()
+    expected_rows = []
+    for group in groups:
+        resolved = analyzed.resolve_group(group)
+        values = np.asarray(
+            [
+                experiment.hertzian.tau_max_uN_per_nm2
+                for experiment in resolved
+                if experiment.hertzian is not None
+                and experiment.hertzian.tau_max_uN_per_nm2 is not None
+            ],
+            dtype=np.float64,
+        )
+        if len(values) == 0:
+            continue
+        valid_experiments = [
+            experiment
+            for experiment in resolved
+            if experiment.hertzian is not None
+            and experiment.hertzian.tau_max_uN_per_nm2 is not None
+        ]
+        expected_rows.append(
+            {
+                "timestamp": _mean_timestamp(
+                    *[experiment.timestamp for experiment in valid_experiments]
+                ),
+                "group_index": group.index,
+                "stems": tuple(experiment.stem for experiment in resolved),
+                "value": float(np.mean(values)),
+                "std": float(np.std(values, ddof=0)),
+                "count": len(values),
+            }
+        )
+
+    rows = analyzed.group_scalar_series("tau_max")
 
     assert rows == expected_rows
 

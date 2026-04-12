@@ -477,6 +477,12 @@ def _saved_plot_analysis_summary(experiment: Experiment) -> str | None:
             )
         if hertzian_result.h_onset_nm is not None:
             lines.append(f"h0={hertzian_result.h_onset_nm:.3g} nm")
+        if hertzian_result.radius_nm is not None:
+            lines.append(f"R={hertzian_result.radius_nm:.3g} nm")
+        if hertzian_result.tau_max_uN_per_nm2 is not None:
+            lines.append(
+                f"tau_max={hertzian_result.tau_max_uN_per_nm2:.3g} uN/nm^2"
+            )
     if not lines:
         return None
     return "\n".join(lines)

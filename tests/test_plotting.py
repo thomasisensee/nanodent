@@ -258,6 +258,23 @@ def test_plot_experiments_can_hide_attached_hertzian_overlay() -> None:
     plt.close(figure)
 
 
+def test_plot_experiments_hertzian_label_stays_simple() -> None:
+    experiment = _make_experiment()
+    experiment = experiment.with_hertzian(
+        replace(
+            experiment.hertzian,
+            radius_nm=42.0,
+            tau_max_uN_per_nm2=0.1234,
+        )
+    )
+    figure, ax = plt.subplots()
+
+    plot_experiments(ax, experiment)
+
+    assert ax.lines[3].get_label() == "synthetic Hertzian fit"
+    plt.close(figure)
+
+
 def test_plot_experiments_can_draw_unloading_overlay_when_requested() -> None:
     experiment = _make_experiment()
     figure, ax = plt.subplots()
@@ -496,6 +513,35 @@ def test_save_experiment_plots_can_zero_onset(tmp_path: Path) -> None:
 
     assert saved_paths == [tmp_path / "synthetic.png"]
     assert saved_paths[0].exists()
+
+
+def test_save_experiment_plots_adds_radius_and_tau_max_to_analysis_box(
+    tmp_path: Path,
+) -> None:
+    experiment = _make_experiment()
+    experiment = experiment.with_hertzian(
+        replace(
+            experiment.hertzian,
+            radius_nm=42.0,
+            tau_max_uN_per_nm2=0.1234,
+        )
+    )
+    initial_figures = set(plt.get_fignums())
+
+    saved_paths = save_experiment_plots(
+        experiment,
+        tmp_path,
+        close=False,
+    )
+    new_figures = set(plt.get_fignums()) - initial_figures
+    figure = plt.figure(new_figures.pop())
+    ax = figure.axes[0]
+
+    assert saved_paths == [tmp_path / "synthetic.png"]
+    assert ax.get_legend() is None
+    assert "R=42 nm" in ax.texts[0].get_text()
+    assert "tau_max=0.123 uN/nm^2" in ax.texts[0].get_text()
+    plt.close(figure)
 
 
 def test_save_experiment_plots_uses_stem_without_source_path(
