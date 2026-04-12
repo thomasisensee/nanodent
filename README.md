@@ -52,6 +52,8 @@ filtered_study = filtered_study.analyze_oliver_pharr()
 filtered_study = filtered_study.analyze_hertzian()
 hardness_rows = filtered_study.scalar_series("hardness")
 pop_in_rows = filtered_study.detect_force_peaks().scalar_series("pop_in_load")
+radius_rows = filtered_study.scalar_series("hertzian_radius")
+tau_rows = filtered_study.scalar_series("tau_max")
 manual_groups = filtered_study.group_by_datetime_ranges(
     [
         (
@@ -114,7 +116,7 @@ The public API also exposes:
 - `save_experiment_plots(...) -> list[Path]`
 
 
-## Demo notebook using methods provided by py4dgeo
+## Demo notebook
 Use the [demo notebook](https://github.com/thomasisensee/nanodent/blob/main/notebooks/demo.ipynb) to test the functionality of `nanodent` and see how it can be used to analyze and visualize nanoindentation experiments.
 
 ## Acknowledgments
