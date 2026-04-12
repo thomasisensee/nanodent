@@ -116,8 +116,10 @@ def plot_experiments(
     show_unloading: bool = False,
     show_oliver_pharr: bool = True,
     show_oliver_pharr_evaluation: bool = False,
+    show_hertzian: bool = True,
     unloading_kwargs: Mapping[str, Any] | None = None,
     fit_kwargs: Mapping[str, Any] | None = None,
+    hertzian_fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
 ) -> Axes:
     """Plot one or more test force-displacement curves onto an axes."""
@@ -165,6 +167,14 @@ def plot_experiments(
             onset_offset=onset_offset,
             show_evaluation_marker=show_oliver_pharr_evaluation,
         )
+        hertzian_result = experiment.hertzian if show_hertzian else None
+        _plot_hertzian_overlay(
+            ax,
+            stem=experiment.stem,
+            fit_result=hertzian_result,
+            fit_kwargs=hertzian_fit_kwargs,
+            onset_offset=onset_offset,
+        )
 
     return ax
 
@@ -179,6 +189,7 @@ def save_experiment_plots(
     selection: Literal["enabled", "disabled", "both"] = "enabled",
     zero_onset: bool = False,
     show_oliver_pharr: bool = True,
+    show_hertzian: bool = True,
     unloading_kwargs: Mapping[str, Any] | None = None,
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] | None = None,
@@ -186,6 +197,7 @@ def save_experiment_plots(
     dpi: float = 150.0,
     close: bool = True,
     fit_kwargs: Mapping[str, Any] | None = None,
+    hertzian_fit_kwargs: Mapping[str, Any] | None = None,
     **line_kwargs: Any,
 ) -> list[Path]:
     """Save one force-displacement plot per experiment."""
@@ -214,8 +226,10 @@ def save_experiment_plots(
             show_unloading=True,
             show_oliver_pharr=show_oliver_pharr,
             show_oliver_pharr_evaluation=True,
+            show_hertzian=show_hertzian,
             unloading_kwargs=unloading_kwargs,
             fit_kwargs=fit_kwargs,
+            hertzian_fit_kwargs=hertzian_fit_kwargs,
             **line_kwargs,
         )
         ax.set_title(experiment.stem)
@@ -334,6 +348,38 @@ def _plot_oliver_pharr_overlay(
     ax.plot(x_values, y_values, **extension_kwargs)
 
 
+def _plot_hertzian_overlay(
+    ax: Axes,
+    *,
+    stem: str,
+    fit_result: Any,
+    fit_kwargs: Mapping[str, Any] | None,
+    onset_offset: float | None,
+) -> None:
+    """Plot the fitted Hertzian onloading curve."""
+
+    if fit_result is None or not fit_result.success:
+        return
+    if len(fit_result.x_fit) == 0 or len(fit_result.y_fit) == 0:
+        return
+
+    overlay_kwargs = {
+        "alpha": 0.95,
+        "color": "tab:orange",
+        "label": f"{stem} Hertzian fit",
+        "linestyle": "-.",
+        "linewidth": 2.25,
+        "zorder": 4.2,
+    }
+    if fit_kwargs is not None:
+        overlay_kwargs.update(dict(fit_kwargs))
+    x_fit, y_fit = _hertzian_plot_curve(
+        fit_result,
+        onset_offset=onset_offset,
+    )
+    ax.plot(x_fit, y_fit, **overlay_kwargs)
+
+
 def _plot_unloading_overlay(
     ax: Axes,
     *,
@@ -412,17 +458,31 @@ def _add_saved_plot_analysis_box(ax: Axes, *, experiment: Experiment) -> None:
 def _saved_plot_analysis_summary(experiment: Experiment) -> str | None:
     """Return the saved-plot scalar summary text when values are available."""
 
-    fit_result = experiment.oliver_pharr
-    if fit_result is None or not fit_result.success:
-        return None
-
     lines: list[str] = []
-    if fit_result.stiffness_uN_per_nm is not None:
-        lines.append(f"S={fit_result.stiffness_uN_per_nm:.2f} uN/nm")
-    if fit_result.hardness_uN_per_nm2 is not None:
-        lines.append(f"H={fit_result.hardness_uN_per_nm2:.3g} uN/nm^2")
-    if fit_result.reduced_modulus_uN_per_nm2 is not None:
-        lines.append(f"Er={fit_result.reduced_modulus_uN_per_nm2:.3g} uN/nm^2")
+    fit_result = experiment.oliver_pharr
+    if fit_result is not None and fit_result.success:
+        if fit_result.stiffness_uN_per_nm is not None:
+            lines.append(f"S={fit_result.stiffness_uN_per_nm:.2f} uN/nm")
+        if fit_result.hardness_uN_per_nm2 is not None:
+            lines.append(f"H={fit_result.hardness_uN_per_nm2:.3g} uN/nm^2")
+        if fit_result.reduced_modulus_uN_per_nm2 is not None:
+            lines.append(
+                f"Er={fit_result.reduced_modulus_uN_per_nm2:.3g} uN/nm^2"
+            )
+    hertzian_result = experiment.hertzian
+    if hertzian_result is not None and hertzian_result.success:
+        if hertzian_result.amplitude_uN_per_nm_3_2 is not None:
+            lines.append(
+                f"A={hertzian_result.amplitude_uN_per_nm_3_2:.3g} uN/nm^(3/2)"
+            )
+        if hertzian_result.h_onset_nm is not None:
+            lines.append(f"h0={hertzian_result.h_onset_nm:.3g} nm")
+        if hertzian_result.radius_nm is not None:
+            lines.append(f"R={hertzian_result.radius_nm:.3g} nm")
+        if hertzian_result.tau_max_uN_per_nm2 is not None:
+            lines.append(
+                f"tau_max={hertzian_result.tau_max_uN_per_nm2:.3g} uN/nm^2"
+            )
     if not lines:
         return None
     return "\n".join(lines)
@@ -652,6 +712,21 @@ def _oliver_pharr_evaluation_point(
     y_value += _fit_result_force_correction(fit_result)
     x_value = _shift_axis_value(x_value, onset_offset)
     return x_value, y_value
+
+
+def _hertzian_plot_curve(
+    fit_result: Any,
+    *,
+    onset_offset: float | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return Hertzian fit-curve coordinates mapped onto raw axes."""
+
+    x_fit = np.asarray(fit_result.x_fit, dtype=np.float64)
+    y_fit = np.asarray(fit_result.y_fit, dtype=np.float64)
+    y_fit = y_fit + _fit_result_force_correction(fit_result)
+    if onset_offset is not None:
+        x_fit = x_fit - onset_offset
+    return x_fit, y_fit
 
 
 def _fit_result_disp_correction(fit_result: Any) -> float:

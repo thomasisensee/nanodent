@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from nanodent.analysis.force_peaks import ForcePeakDetectionResult
+    from nanodent.analysis.hertzian import HertzianExperimentResult
     from nanodent.analysis.oliver_pharr import OliverPharrExperimentResult
     from nanodent.analysis.onset import OnsetDetectionResult
     from nanodent.analysis.unloading import UnloadingDetectionResult
@@ -155,6 +156,7 @@ class Experiment:
     force_peaks: "ForcePeakDetectionResult | None" = None
     unloading: "UnloadingDetectionResult | None" = None
     oliver_pharr: "OliverPharrExperimentResult | None" = None
+    hertzian: "HertzianExperimentResult | None" = None
 
     def __post_init__(self) -> None:
         """Normalize optional provenance and validate core experiment state."""
@@ -307,6 +309,13 @@ class Experiment:
         """Return a copy of the experiment with updated analysis results."""
 
         return replace(self, oliver_pharr=result)
+
+    def with_hertzian(
+        self, result: "HertzianExperimentResult | None"
+    ) -> "Experiment":
+        """Return a copy of the experiment with updated Hertzian results."""
+
+        return replace(self, hertzian=result)
 
     def with_onset(
         self, result: "OnsetDetectionResult | None"

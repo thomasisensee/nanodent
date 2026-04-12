@@ -69,6 +69,7 @@ def test_load_experiment_parses_sections_and_metadata() -> None:
     assert experiment.force_peaks is None
     assert experiment.unloading is None
     assert experiment.oliver_pharr is None
+    assert experiment.hertzian is None
 
 
 def test_normalize_column_name_handles_micro_variants() -> None:
@@ -309,8 +310,9 @@ def test_load_experiment_reports_file_path_on_parse_error(
 def test_load_folder_discovers_siblings_and_sorts_experiments() -> None:
     study = load_folder(DATA_DIR)
 
-    assert len(study.experiments) == 4
+    assert len(study.experiments) == 5
     assert [experiment.stem for experiment in study.experiments] == [
+        "experiment_e",
         "experiment_a",
         "experiment_b",
         "experiment_c",

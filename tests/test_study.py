@@ -5,6 +5,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from nanodent import load_folder
+from nanodent.analysis.hertzian import (
+    calculate_hertzian_radius,
+    calculate_tau_max,
+)
 from nanodent.models import (
     Experiment,
     ExperimentPaths,
@@ -17,6 +22,7 @@ EXPERIMENT_A = "experiment_a"
 EXPERIMENT_B = "experiment_b"
 EXPERIMENT_C = "experiment_c"
 EXPERIMENT_D = "experiment_d"
+EXPERIMENT_E = "experiment_e"
 PARSED_TIP_AREA_FUNCTION = TipAreaFunction(
     c0=24.5,
     c1=7749.44,
@@ -38,6 +44,31 @@ def _mean_timestamp(*timestamps: datetime) -> datetime:
                 ]
             )
         )
+    )
+
+
+def _hertzian_test_section(*, baseline_offset_uN: float = 5.0) -> SignalTable:
+    load_disp = np.linspace(0.0, 100.0, 101, dtype=np.float64)
+    load_force = (
+        0.5 * np.maximum(load_disp - 10.0, 0.0) ** 1.5 + baseline_offset_uN
+    )
+    unload_disp = np.linspace(100.0, 80.0, 41, dtype=np.float64)[1:]
+    unload_force = np.linspace(
+        float(load_force[-1]),
+        baseline_offset_uN + 50.0,
+        41,
+        dtype=np.float64,
+    )[1:]
+    disp = np.concatenate([load_disp, unload_disp])
+    force = np.concatenate([load_force, unload_force])
+    return SignalTable(
+        columns={
+            "time_s": np.arange(len(disp), dtype=np.float64),
+            "disp_nm": disp,
+            "force_uN": force,
+        },
+        point_count=len(disp),
+        raw_columns=("Time_s", "Disp_nm", "Force_uN"),
     )
 
 
@@ -487,6 +518,208 @@ def test_analyze_oliver_pharr_overwrite_recomputes_selected_experiments(
     assert (
         by_stem[EXPERIMENT_B].oliver_pharr == once.experiments[1].oliver_pharr
     )
+
+
+def test_analyze_hertzian_auto_detects_force_peaks_and_uses_onset(
+    base_study,
+) -> None:
+    experiment = replace(
+        base_study.experiments[0],
+        test=_hertzian_test_section(),
+    )
+    study = Study(experiments=(experiment,)).detect_onset(
+        baseline_points=10,
+        k=1.0,
+        consecutive=3,
+    )
+
+    analyzed = study.analyze_hertzian(peak_prominence=50.0)
+    result = analyzed.experiments[0].hertzian
+
+    assert analyzed.experiments[0].force_peaks is not None
+    assert result is not None
+    assert result.success is True
+    assert result.stem == EXPERIMENT_A
+    assert result.fit_end_index == (
+        analyzed.experiments[0].force_peaks.peaks[0].index
+    )
+    assert result.initial_onset_disp_nm == pytest.approx(
+        analyzed.experiments[0].onset.onset_disp_nm
+    )
+    assert result.force_correction_uN == pytest.approx(
+        analyzed.experiments[0].onset.baseline_offset_uN
+    )
+    assert result.h_onset_nm == pytest.approx(10.0, abs=0.25)
+
+
+def test_analyze_hertzian_skips_disabled_experiments_by_default(
+    base_study,
+) -> None:
+    experiment = replace(
+        base_study.experiments[0],
+        test=_hertzian_test_section(),
+    )
+    study = Study(experiments=(experiment,)).disable_experiments(EXPERIMENT_A)
+
+    skipped = study.analyze_hertzian(peak_prominence=50.0)
+    included = study.analyze_hertzian(
+        peak_prominence=50.0,
+        include_disabled=True,
+    )
+
+    assert skipped.experiments[0].hertzian is None
+    assert included.experiments[0].hertzian is not None
+
+
+def test_analyze_hertzian_attaches_missing_force_peak_result(
+    base_study,
+) -> None:
+    flat_test = SignalTable(
+        columns={
+            "time_s": np.arange(20, dtype=np.float64),
+            "disp_nm": np.arange(20, dtype=np.float64),
+            "force_uN": np.ones(20, dtype=np.float64),
+        },
+        point_count=20,
+        raw_columns=("Time_s", "Disp_nm", "Force_uN"),
+    )
+    experiment = replace(base_study.experiments[0], test=flat_test)
+
+    analyzed = Study(experiments=(experiment,)).analyze_hertzian()
+    result = analyzed.experiments[0].hertzian
+
+    assert result is not None
+    assert result.success is False
+    assert result.reason == "missing_force_peak"
+
+
+def test_analyze_hertzian_requires_overwrite_to_replace_success(
+    base_study,
+) -> None:
+    experiment = replace(
+        base_study.experiments[0],
+        test=_hertzian_test_section(),
+    )
+    once = Study(experiments=(experiment,)).analyze_hertzian(
+        peak_prominence=50.0
+    )
+
+    with pytest.warns(UserWarning, match=EXPERIMENT_A):
+        skipped = once.analyze_hertzian(
+            stems=EXPERIMENT_A,
+            fit_num_points=25,
+        )
+    overwritten = once.analyze_hertzian(
+        stems=EXPERIMENT_A,
+        fit_num_points=25,
+        overwrite=True,
+    )
+
+    assert skipped.experiments[0].hertzian == once.experiments[0].hertzian
+    assert len(overwritten.experiments[0].hertzian.x_fit) == 25
+
+
+def test_recomputed_dependencies_clear_hertzian_results(base_study) -> None:
+    experiment = replace(
+        base_study.experiments[0],
+        test=_hertzian_test_section(),
+    )
+    once = (
+        Study(experiments=(experiment,))
+        .detect_onset(baseline_points=10, k=1.0, consecutive=3)
+        .analyze_hertzian(peak_prominence=50.0)
+    )
+
+    with pytest.warns(UserWarning, match="Hertzian"):
+        onset_rerun = once.detect_onset(
+            baseline_points=12,
+            k=1.0,
+            consecutive=3,
+            overwrite=True,
+        )
+    with pytest.warns(UserWarning, match="Hertzian"):
+        peak_rerun = once.detect_force_peaks(
+            prominence=50.0,
+            overwrite=True,
+        )
+
+    assert onset_rerun.experiments[0].hertzian is None
+    assert peak_rerun.experiments[0].hertzian is None
+
+
+def test_analyze_hertzian_experiment_e_ends_display_at_single_peak(
+    data_dir: Path,
+) -> None:
+    analyzed = (
+        load_folder(data_dir)
+        .detect_onset()
+        .detect_force_peaks()
+        .detect_unloading()
+        .analyze_hertzian(include_disabled=True)
+    )
+    experiment = {item.stem: item for item in analyzed.experiments}[
+        EXPERIMENT_E
+    ]
+
+    assert experiment.force_peaks is not None
+    assert experiment.force_peaks.peak_count == 1
+    assert experiment.unloading is not None
+    assert experiment.hertzian is not None
+    assert experiment.hertzian.success is True
+    assert experiment.force_peaks.peaks[0].index == (
+        experiment.unloading.start_index
+    )
+    assert experiment.hertzian.fit_end_index == (
+        experiment.force_peaks.peaks[0].index
+    )
+    assert experiment.hertzian.x_fit[-1] == pytest.approx(
+        experiment.force_peaks.peaks[0].disp_nm
+    )
+
+
+def test_analyze_hertzian_derives_radius_and_tau_max_from_dependencies(
+    base_study,
+) -> None:
+    analyzed = (
+        base_study.detect_onset()
+        .detect_force_peaks()
+        .analyze_oliver_pharr()
+        .analyze_hertzian()
+    )
+    checked_radius = False
+    checked_tau_max = False
+    for experiment in analyzed.experiments:
+        hertzian = experiment.hertzian
+        oliver_pharr = experiment.oliver_pharr
+        if hertzian is None or not hertzian.success:
+            continue
+        if oliver_pharr is None or not oliver_pharr.success:
+            continue
+        reduced_modulus = oliver_pharr.reduced_modulus_uN_per_nm2
+        amplitude = hertzian.amplitude_uN_per_nm_3_2
+        if reduced_modulus is None or amplitude is None:
+            continue
+        assert hertzian.reduced_modulus_uN_per_nm2 == pytest.approx(
+            reduced_modulus
+        )
+        assert hertzian.radius_nm == pytest.approx(
+            calculate_hertzian_radius(amplitude, reduced_modulus)
+        )
+        checked_radius = True
+        pop_in_load = min(
+            float(peak.force_uN) for peak in experiment.force_peaks.peaks
+        )
+        if len(experiment.force_peaks.peaks) < 2:
+            assert hertzian.tau_max_uN_per_nm2 is None
+            continue
+        assert hertzian.pop_in_load_uN == pytest.approx(pop_in_load)
+        assert hertzian.tau_max_uN_per_nm2 == pytest.approx(
+            calculate_tau_max(reduced_modulus, amplitude, pop_in_load)
+        )
+        checked_tau_max = True
+
+    assert checked_radius is True
+    assert checked_tau_max is True
 
 
 def test_analyze_oliver_pharr_forwards_power_law_options(base_study) -> None:
@@ -947,6 +1180,52 @@ def test_scalar_series_returns_pop_in_load_rows(base_study) -> None:
     assert rows == expected
 
 
+def test_scalar_series_returns_hertzian_radius_rows(base_study) -> None:
+    analyzed = (
+        base_study.detect_onset()
+        .detect_force_peaks()
+        .analyze_oliver_pharr()
+        .analyze_hertzian()
+    )
+    expected = [
+        {
+            "timestamp": experiment.timestamp,
+            "stem": experiment.stem,
+            "value": experiment.hertzian.radius_nm,
+        }
+        for experiment in analyzed.experiments
+        if experiment.hertzian is not None
+        and experiment.hertzian.radius_nm is not None
+    ]
+
+    rows = analyzed.scalar_series("hertzian_radius")
+
+    assert rows == expected
+
+
+def test_scalar_series_returns_tau_max_rows(base_study) -> None:
+    analyzed = (
+        base_study.detect_onset()
+        .detect_force_peaks()
+        .analyze_oliver_pharr()
+        .analyze_hertzian()
+    )
+    expected = [
+        {
+            "timestamp": experiment.timestamp,
+            "stem": experiment.stem,
+            "value": experiment.hertzian.tau_max_uN_per_nm2,
+        }
+        for experiment in analyzed.experiments
+        if experiment.hertzian is not None
+        and experiment.hertzian.tau_max_uN_per_nm2 is not None
+    ]
+
+    rows = analyzed.scalar_series("tau_max")
+
+    assert rows == expected
+
+
 def test_scalar_series_can_keep_missing_values(base_study) -> None:
     rows = base_study.scalar_series("hardness", drop_missing=False)
 
@@ -979,6 +1258,17 @@ def test_scalar_series_pop_in_load_can_keep_missing_values(
         experiment.stem for experiment in rest
     ]
     assert all(row["value"] is not None for row in rows[1:])
+
+
+def test_scalar_series_tau_max_can_keep_missing_values(base_study) -> None:
+    analyzed = (
+        base_study.detect_onset().detect_force_peaks().analyze_hertzian()
+    )
+
+    rows = analyzed.scalar_series("tau_max", drop_missing=False)
+
+    assert len(rows) == len(analyzed.experiments)
+    assert all(row["value"] is None for row in rows)
 
 
 def test_scalar_series_respects_enabled_filter(base_study) -> None:
@@ -1094,6 +1384,54 @@ def test_group_scalar_series_returns_grouped_pop_in_load_rows(
         )
 
     rows = analyzed.group_scalar_series("pop_in_load")
+
+    assert rows == expected_rows
+
+
+def test_group_scalar_series_returns_grouped_tau_max_rows(
+    base_study,
+) -> None:
+    analyzed = (
+        base_study.detect_onset()
+        .detect_force_peaks()
+        .analyze_oliver_pharr()
+        .analyze_hertzian()
+    )
+    groups = analyzed.group_by_time_gap()
+    expected_rows = []
+    for group in groups:
+        resolved = analyzed.resolve_group(group)
+        values = np.asarray(
+            [
+                experiment.hertzian.tau_max_uN_per_nm2
+                for experiment in resolved
+                if experiment.hertzian is not None
+                and experiment.hertzian.tau_max_uN_per_nm2 is not None
+            ],
+            dtype=np.float64,
+        )
+        if len(values) == 0:
+            continue
+        valid_experiments = [
+            experiment
+            for experiment in resolved
+            if experiment.hertzian is not None
+            and experiment.hertzian.tau_max_uN_per_nm2 is not None
+        ]
+        expected_rows.append(
+            {
+                "timestamp": _mean_timestamp(
+                    *[experiment.timestamp for experiment in valid_experiments]
+                ),
+                "group_index": group.index,
+                "stems": tuple(experiment.stem for experiment in resolved),
+                "value": float(np.mean(values)),
+                "std": float(np.std(values, ddof=0)),
+                "count": len(values),
+            }
+        )
+
+    rows = analyzed.group_scalar_series("tau_max")
 
     assert rows == expected_rows
 
@@ -1296,6 +1634,7 @@ def test_save_and_load_session_restores_results(
         )
         .detect_force_peaks(include_disabled=True)
         .analyze_oliver_pharr(include_disabled=True)
+        .analyze_hertzian(include_disabled=True)
     )
 
     saved_path = saved.save_session(session_path)
@@ -1327,6 +1666,7 @@ def test_save_and_load_session_restores_results(
     assert by_stem[EXPERIMENT_B].force_peaks is not None
     assert by_stem[EXPERIMENT_B].unloading is not None
     assert by_stem[EXPERIMENT_B].oliver_pharr is not None
+    assert by_stem[EXPERIMENT_B].hertzian is not None
 
 
 def test_load_session_keeps_current_results_without_overwrite(

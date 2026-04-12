@@ -6,6 +6,12 @@ from nanodent.analysis.force_peaks import (
     ForcePeakPosition,
     detect_force_peaks,
 )
+from nanodent.analysis.hertzian import (
+    HertzianExperimentResult,
+    analyze_hertzian,
+    calculate_hertzian_radius,
+    calculate_tau_max,
+)
 from nanodent.analysis.oliver_pharr import (
     OliverPharrExperimentResult,
     analyze_oliver_pharr,
@@ -28,6 +34,7 @@ from nanodent.analysis.unloading import (
 __all__ = [
     "ForcePeakDetectionResult",
     "ForcePeakPosition",
+    "HertzianExperimentResult",
     "OnsetDetectionResult",
     "OliverPharrExperimentResult",
     "QualityCheckResult",
@@ -35,7 +42,10 @@ __all__ = [
     "detect_force_peaks",
     "detect_onset",
     "detect_unloading",
+    "analyze_hertzian",
     "analyze_oliver_pharr",
+    "calculate_hertzian_radius",
+    "calculate_tau_max",
     "classify_gradual_onset",
     "classify_high_displacement",
     "classify_flat_force",

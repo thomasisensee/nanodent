@@ -3,6 +3,11 @@ import pytest
 
 from nanodent.analysis.filters import savgol
 from nanodent.analysis.force_peaks import detect_force_peaks
+from nanodent.analysis.hertzian import (
+    analyze_hertzian,
+    calculate_hertzian_radius,
+    calculate_tau_max,
+)
 from nanodent.analysis.oliver_pharr import analyze_oliver_pharr
 from nanodent.analysis.onset import detect_onset
 from nanodent.analysis.quality import (
@@ -56,6 +61,20 @@ def _make_power_law_unloading_curve(
         np.concatenate([load_force, unload_force]),
         float(k),
     )
+
+
+def _make_hertzian_curve(
+    *,
+    amplitude: float = 0.25,
+    h_onset_nm: float = 12.0,
+    baseline_offset_uN: float = 4.0,
+) -> tuple[np.ndarray, np.ndarray, float, float]:
+    disp = np.linspace(0.0, 100.0, 101, dtype=np.float64)
+    force = (
+        amplitude * np.maximum(disp - h_onset_nm, 0.0) ** 1.5
+        + baseline_offset_uN
+    )
+    return disp, force, amplitude, h_onset_nm
 
 
 def _slice_unloading_branch(
@@ -372,6 +391,243 @@ def test_detect_unloading_validates_inputs_and_method() -> None:
 
     with pytest.raises(ValueError, match="method"):
         detect_unloading(force, method="invalid")
+
+
+def test_analyze_hertzian_fits_onloading_curve() -> None:
+    disp, force, amplitude, h_onset = _make_hertzian_curve()
+
+    result = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        initial_onset_disp_nm=h_onset + 5.0,
+        baseline_offset_uN=4.0,
+        stem="synthetic",
+    )
+
+    assert result.success is True
+    assert result.stem == "synthetic"
+    assert result.fit_start_index == 0
+    assert result.fit_end_index == len(disp) - 1
+    assert result.fit_point_count == len(disp)
+    assert result.initial_onset_disp_nm == pytest.approx(h_onset + 5.0)
+    assert result.force_correction_uN == pytest.approx(4.0)
+    assert result.amplitude_uN_per_nm_3_2 == pytest.approx(amplitude)
+    assert result.h_onset_nm == pytest.approx(h_onset)
+    assert result.r_squared == pytest.approx(1.0)
+    assert len(result.x_fit) == 200
+    assert len(result.y_fit) == 200
+    assert result.x_fit[0] == pytest.approx(result.h_onset_nm)
+    assert result.y_fit[0] == pytest.approx(0.0)
+
+
+def test_analyze_hertzian_keeps_pre_onset_samples_in_fit() -> None:
+    disp, force, amplitude, h_onset = _make_hertzian_curve()
+
+    result = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        baseline_offset_uN=4.0,
+    )
+
+    assert result.success is True
+    assert result.fit_point_count == len(disp)
+    assert result.amplitude_uN_per_nm_3_2 == pytest.approx(amplitude)
+    assert result.h_onset_nm == pytest.approx(h_onset)
+    assert result.x_fit[0] == pytest.approx(h_onset)
+
+
+def test_analyze_hertzian_display_curve_ends_at_fit_endpoint() -> None:
+    disp, force, _, _ = _make_hertzian_curve()
+    disp = disp.copy()
+    disp[80] = 120.0
+
+    result = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        baseline_offset_uN=4.0,
+    )
+
+    assert result.success is True
+    assert result.fit_point_count == len(disp)
+    assert (
+        np.max(disp[: result.fit_end_index + 1]) > disp[result.fit_end_index]
+    )
+    assert result.x_fit[-1] == pytest.approx(disp[result.fit_end_index])
+
+
+def test_analyze_hertzian_applies_force_baseline_correction() -> None:
+    disp, force, _, _ = _make_hertzian_curve(baseline_offset_uN=7.5)
+
+    result = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        baseline_offset_uN=7.5,
+        fit_num_points=25,
+    )
+
+    assert result.success is True
+    assert result.force_correction_uN == pytest.approx(7.5)
+    assert result.y_fit[0] == pytest.approx(0.0)
+    assert len(result.y_fit) == 25
+
+
+def test_analyze_hertzian_marks_too_few_onloading_points() -> None:
+    disp = np.arange(4, dtype=np.float64)
+    force = np.arange(4, dtype=np.float64)
+
+    result = analyze_hertzian(disp, force, fit_end_index=3)
+
+    assert result.success is False
+    assert result.reason == "too_few_onloading_points"
+    assert result.fit_point_count == 4
+
+
+def test_analyze_hertzian_validates_fit_end_index() -> None:
+    disp, force, _, _ = _make_hertzian_curve()
+
+    with pytest.raises(ValueError, match="fit_end_index"):
+        analyze_hertzian(disp, force, fit_end_index=len(disp))
+
+
+def test_calculate_hertzian_radius_uses_op_and_hertzian_values() -> None:
+    reduced_modulus = 12.0
+    amplitude = 0.5
+
+    result = calculate_hertzian_radius(amplitude, reduced_modulus)
+
+    expected = (3.0 * amplitude / (4.0 * reduced_modulus)) ** 2
+    assert result == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    ("amplitude", "reduced_modulus"),
+    [
+        (0.0, 1.0),
+        (1.0, 0.0),
+        (np.nan, 1.0),
+        (1.0, np.inf),
+    ],
+)
+def test_calculate_hertzian_radius_rejects_invalid_inputs(
+    amplitude: float,
+    reduced_modulus: float,
+) -> None:
+    with pytest.raises(ValueError, match="finite and greater than 0"):
+        calculate_hertzian_radius(amplitude, reduced_modulus)
+
+
+def test_calculate_tau_max_uses_op_hertzian_and_pop_in_values() -> None:
+    reduced_modulus = 12.0
+    amplitude = 0.5
+    pop_in_load = 20.0
+
+    result = calculate_tau_max(reduced_modulus, amplitude, pop_in_load)
+
+    expected = (0.31 / np.pi) * (
+        512.0 * pop_in_load * reduced_modulus**6 / (27.0 * amplitude**4)
+    ) ** (1.0 / 3.0)
+    assert result == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    ("reduced_modulus", "amplitude", "pop_in_load"),
+    [
+        (0.0, 1.0, 1.0),
+        (1.0, 0.0, 1.0),
+        (1.0, 1.0, 0.0),
+        (np.nan, 1.0, 1.0),
+        (1.0, np.inf, 1.0),
+    ],
+)
+def test_calculate_tau_max_rejects_invalid_inputs(
+    reduced_modulus: float,
+    amplitude: float,
+    pop_in_load: float,
+) -> None:
+    with pytest.raises(ValueError, match="finite and greater than 0"):
+        calculate_tau_max(reduced_modulus, amplitude, pop_in_load)
+
+
+def test_analyze_hertzian_derives_radius_and_tau_max_when_available() -> None:
+    reduced_modulus = 12.0
+    pop_in_load = 20.0
+    disp, force, _, _ = _make_hertzian_curve()
+
+    result = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        baseline_offset_uN=4.0,
+        reduced_modulus_uN_per_nm2=reduced_modulus,
+        pop_in_load_uN=pop_in_load,
+    )
+
+    assert result.success is True
+    assert result.reduced_modulus_uN_per_nm2 == pytest.approx(reduced_modulus)
+    assert result.pop_in_load_uN == pytest.approx(pop_in_load)
+    assert result.radius_nm == pytest.approx(
+        calculate_hertzian_radius(
+            result.amplitude_uN_per_nm_3_2,
+            reduced_modulus,
+        )
+    )
+    assert result.tau_max_uN_per_nm2 == pytest.approx(
+        calculate_tau_max(
+            reduced_modulus,
+            result.amplitude_uN_per_nm_3_2,
+            pop_in_load,
+        )
+    )
+    assert result.summary()["radius_nm"] == pytest.approx(result.radius_nm)
+    assert result.summary()["tau_max_uN_per_nm2"] == pytest.approx(
+        result.tau_max_uN_per_nm2
+    )
+
+
+def test_analyze_hertzian_omits_derived_values_without_dependencies() -> None:
+    disp, force, _, _ = _make_hertzian_curve()
+
+    missing = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        baseline_offset_uN=4.0,
+    )
+    with_modulus = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        baseline_offset_uN=4.0,
+        reduced_modulus_uN_per_nm2=12.0,
+    )
+    invalid = analyze_hertzian(
+        disp,
+        force,
+        fit_end_index=len(disp) - 1,
+        baseline_offset_uN=4.0,
+        reduced_modulus_uN_per_nm2=0.0,
+        pop_in_load_uN=np.nan,
+    )
+
+    assert missing.success is True
+    assert missing.reduced_modulus_uN_per_nm2 is None
+    assert missing.pop_in_load_uN is None
+    assert missing.radius_nm is None
+    assert missing.tau_max_uN_per_nm2 is None
+    assert with_modulus.success is True
+    assert with_modulus.reduced_modulus_uN_per_nm2 == pytest.approx(12.0)
+    assert with_modulus.radius_nm is not None
+    assert with_modulus.pop_in_load_uN is None
+    assert with_modulus.tau_max_uN_per_nm2 is None
+    assert invalid.success is True
+    assert invalid.reduced_modulus_uN_per_nm2 is None
+    assert invalid.radius_nm is None
+    assert invalid.pop_in_load_uN is None
+    assert invalid.tau_max_uN_per_nm2 is None
 
 
 def test_analyze_oliver_pharr_fits_linear_unloading_branch() -> None:

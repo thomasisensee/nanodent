@@ -12,10 +12,19 @@ readme = "README.md"
 authors = [
     { name = "Thomas Isensee", email = "thomas.isensee@iwr.uni-heidelberg.de" },
 ]
-version = "0.0.3"
+version = "0.1.0"
 requires-python = ">=3.10"
 license-files = ["LICEN[CS]E*"]
 license = "MIT"
+keywords = [
+  "nanoindentation",
+  "indentation",
+  "contact-mechanics",
+  "oliver-pharr",
+  "hertzian",
+  "elastic-modulus",
+  "hardness",
+]
 classifiers = [
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
