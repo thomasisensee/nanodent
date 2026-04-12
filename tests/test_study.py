@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from nanodent import load_folder
 from nanodent.models import (
     Experiment,
     ExperimentPaths,
@@ -17,6 +18,7 @@ EXPERIMENT_A = "experiment_a"
 EXPERIMENT_B = "experiment_b"
 EXPERIMENT_C = "experiment_c"
 EXPERIMENT_D = "experiment_d"
+EXPERIMENT_E = "experiment_e"
 PARSED_TIP_AREA_FUNCTION = TipAreaFunction(
     c0=24.5,
     c1=7749.44,
@@ -639,6 +641,36 @@ def test_recomputed_dependencies_clear_hertzian_results(base_study) -> None:
 
     assert onset_rerun.experiments[0].hertzian is None
     assert peak_rerun.experiments[0].hertzian is None
+
+
+def test_analyze_hertzian_experiment_e_ends_display_at_single_peak(
+    data_dir: Path,
+) -> None:
+    analyzed = (
+        load_folder(data_dir)
+        .detect_onset()
+        .detect_force_peaks()
+        .detect_unloading()
+        .analyze_hertzian(include_disabled=True)
+    )
+    experiment = {item.stem: item for item in analyzed.experiments}[
+        EXPERIMENT_E
+    ]
+
+    assert experiment.force_peaks is not None
+    assert experiment.force_peaks.peak_count == 1
+    assert experiment.unloading is not None
+    assert experiment.hertzian is not None
+    assert experiment.hertzian.success is True
+    assert experiment.force_peaks.peaks[0].index == (
+        experiment.unloading.start_index
+    )
+    assert experiment.hertzian.fit_end_index == (
+        experiment.force_peaks.peaks[0].index
+    )
+    assert experiment.hertzian.x_fit[-1] == pytest.approx(
+        experiment.force_peaks.peaks[0].disp_nm
+    )
 
 
 def test_analyze_oliver_pharr_forwards_power_law_options(base_study) -> None:
