@@ -89,3 +89,9 @@ select = [
     "F",
     "I",
 ]
+
+[[index]]
+name = "testpypi"
+url = "https://test.pypi.org/nanodent/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true

@@ -1,8 +1,10 @@
 # nanodent
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/thomasisensee/nanodent/ci.yml?branch=main)](https://github.com/thomasisensee/nanodent/actions/workflows/ci.yml)
+[![GitHub Workflow Status](https://github.com/thomasisensee/nanodent/actions/workflows/ci.yml/badge.svg)](https://github.com/thomasisensee/nanodent/actions/workflows/ci.yml)
+[![Documentation Status](https://readthedocs.org/projects/nanodent/badge/)](https://nanodent.readthedocs.io/)
 [![codecov](https://codecov.io/github/thomasisensee/nanodent/graph/badge.svg?token=DRJB38CIZI)](https://codecov.io/github/thomasisensee/nanodent)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/thomasisensee/nanodent/main.svg)](https://results.pre-commit.ci/latest/github/thomasisensee/nanodent/main)
 ![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12%20|%203.13%20|%203.14-blue)
 
 ## Installation

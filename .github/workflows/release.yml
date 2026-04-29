@@ -54,7 +54,7 @@ jobs:
           PY
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.0.0
+        uses: astral-sh/setup-uv@v8.1.0
 
       - name: Build source and wheel distributions
         run: |
@@ -89,7 +89,7 @@ jobs:
           path: dist/
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.0.0
+        uses: astral-sh/setup-uv@v8.1.0
 
       - name: Show downloaded files
         run: |
@@ -100,7 +100,7 @@ jobs:
       - name: Publish distributions to TestPyPI
         run: |
           uv publish --index testpypi \
-          --config-file uv.toml \
+          --config-file {{ github.workspace }}/pyproject.toml \
           dist/*
 
   publish-pypi:
@@ -125,7 +125,7 @@ jobs:
           path: dist/
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.0.0
+        uses: astral-sh/setup-uv@v8.1.0
 
       - name: Show downloaded files
         run: |
