@@ -1,11 +1,12 @@
 # nanodent
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![GitHub Workflow Status](https://github.com/thomasisensee/nanodent/actions/workflows/ci.yml/badge.svg)](https://github.com/thomasisensee/nanodent/actions/workflows/ci.yml)
-[![Documentation Status](https://readthedocs.org/projects/nanodent/badge/)](https://nanodent.readthedocs.io/)
+[![License](https://img.shields.io/pypi/l/nanodent?label=License)](https://opensource.org/licenses/MIT)
+[![GitHub Workflow](https://github.com/thomasisensee/nanodent/actions/workflows/ci.yml/badge.svg)](https://github.com/thomasisensee/nanodent/actions/workflows/ci.yml)
+[![Documentation](https://readthedocs.org/projects/nanodent/badge/)](https://nanodent.readthedocs.io/)
 [![codecov](https://codecov.io/github/thomasisensee/nanodent/graph/badge.svg?token=DRJB38CIZI)](https://codecov.io/github/thomasisensee/nanodent)
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/thomasisensee/nanodent/main.svg)](https://results.pre-commit.ci/latest/github/thomasisensee/nanodent/main)
-![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12%20|%203.13%20|%203.14-blue)
+[![PyPI](https://img.shields.io/pypi/v/nanodent?logo=pypi&logoColor=gold&label=PyPI)](https://pypi.org/project/nanodent)
+[![Python](https://img.shields.io/pypi/pyversions/nanodent?logo=python&logoColor=gold&label=Python)](https://pypi.org/project/nanodent)
 
 ## Installation
 
